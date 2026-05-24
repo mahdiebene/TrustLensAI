@@ -27,6 +27,17 @@ export const metadata: Metadata = {
     "AI-Powered Trust Scoring Platform for Bengali Social Media. গুজব চিনুন, সত্য জানুন।",
 };
 
+// Inline script to prevent flash of wrong theme
+const themeScript = `
+(function() {
+  try {
+    var theme = localStorage.getItem('trustlens-theme') || 'system';
+    var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', isDark);
+  } catch(e) {}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: {
@@ -34,10 +45,13 @@ export default function RootLayout({
 }) {
   return (
     <html
-      lang="en"
-      className={`dark ${inter.variable} ${hindSiliguri.variable} ${jetbrainsMono.variable}`}
+      lang="bn"
+      className={`${inter.variable} ${hindSiliguri.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="min-h-screen bg-surface-0 text-text-primary antialiased">
         <main className="mx-auto max-w-content px-6 md:px-12 lg:px-16 py-8">
           {children}

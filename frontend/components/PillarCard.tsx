@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useStore } from "@/lib/store";
+import { useI18n } from "@/lib/useI18n";
 
 interface PillarCardProps {
   name: string;
@@ -31,7 +33,12 @@ export function PillarCard({
   index,
 }: PillarCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const { language } = useStore();
+  const t = useI18n();
   const color = getScoreColor(score);
+
+  const displayName = language === "bn" ? nameBn : name;
+  const displayExplanation = language === "bn" ? explanationBn : explanation;
 
   return (
     <motion.div
@@ -55,8 +62,12 @@ export function PillarCard({
       <div className="pl-5 pr-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
-            <span className="text-body text-text-secondary">{name}</span>
-            <span className="text-caption text-text-tertiary font-bengali">{nameBn}</span>
+            <span className={`text-text-secondary ${language === "bn" ? "text-body-bn font-bengali" : "text-body"}`}>
+              {displayName}
+            </span>
+            {language === "en" && (
+              <span className="text-caption text-text-tertiary font-bengali">{nameBn}</span>
+            )}
           </div>
           <span
             className="font-mono text-page-section font-semibold score-tight"
@@ -68,8 +79,8 @@ export function PillarCard({
 
         {/* One-line finding */}
         {!expanded && (
-          <p className="text-secondary-label text-text-secondary mt-2 truncate">
-            {explanation}
+          <p className={`text-secondary-label text-text-secondary mt-2 truncate ${language === "bn" ? "font-bengali" : ""}`}>
+            {displayExplanation}
           </p>
         )}
 
@@ -83,12 +94,12 @@ export function PillarCard({
               transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               className="mt-3 flex flex-col gap-2 overflow-hidden"
             >
-              <p className="text-body text-text-primary">{explanation}</p>
-              <p className="text-body-bn text-text-secondary font-bengali">{explanationBn}</p>
+              <p className="text-body-bn text-text-primary font-bengali">{explanationBn}</p>
+              <p className="text-body text-text-secondary">{explanation}</p>
               {evidence.length > 0 && (
                 <div className="flex flex-col gap-1 mt-2">
                   <span className="text-caption text-text-tertiary caps-wide uppercase">
-                    Evidence
+                    {t.evidence}
                   </span>
                   {evidence.map((item, i) => (
                     <span key={i} className="text-caption text-text-secondary">
@@ -105,7 +116,7 @@ export function PillarCard({
       {/* Inactive overlay */}
       {!active && (
         <div className="absolute inset-0 bg-surface-0/50 flex items-center justify-center">
-          <span className="text-caption text-text-tertiary">Pending</span>
+          <span className="text-caption text-text-tertiary">—</span>
         </div>
       )}
     </motion.div>

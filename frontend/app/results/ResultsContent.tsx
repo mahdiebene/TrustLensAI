@@ -7,11 +7,15 @@ import { TrustGauge } from "@/components/TrustGauge";
 import { PillarCard } from "@/components/PillarCard";
 import { RadarChart } from "@/components/RadarChart";
 import { ScanAnimation } from "@/components/ScanAnimation";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { useStore } from "@/lib/store";
+import { useI18n } from "@/lib/useI18n";
 import { analyzeContent } from "@/lib/api";
 
 export function ResultsContent() {
-  const { result, setResult, isAnalyzing, setIsAnalyzing, analysisStatus, setAnalysisStatus } = useStore();
+  const t = useI18n();
+  const { result, setResult, isAnalyzing, setIsAnalyzing, analysisStatus, setAnalysisStatus, language } = useStore();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
@@ -27,10 +31,10 @@ export function ResultsContent() {
     setError(null);
 
     const statuses = [
-      "Checking sources...",
-      "Analyzing language patterns...",
-      "Cross-referencing claims...",
-      "Generating trust score...",
+      t.checkingSources,
+      t.analyzingLanguage,
+      t.crossReferencing,
+      t.generatingScore,
     ];
 
     let statusIndex = 0;
@@ -65,12 +69,16 @@ export function ResultsContent() {
             TrustLens
           </h1>
         </div>
-        <a
-          href="/"
-          className="text-caption text-accent-blue hover:underline transition-colors duration-150"
-        >
-          ← নতুন বিশ্লেষণ
-        </a>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <LanguageToggle />
+          <a
+            href="/"
+            className="ml-2 text-caption text-accent-blue hover:underline transition-colors duration-150"
+          >
+            ← {t.newAnalysis}
+          </a>
+        </div>
       </header>
 
       {/* Loading state */}
@@ -132,27 +140,29 @@ export function ResultsContent() {
           {/* Explanation */}
           <section className="flex flex-col gap-4">
             <h2 className="text-section-header font-semibold heading-tight text-text-primary">
-              বিশ্লেষণ
+              {t.explanation}
             </h2>
             <div className="card p-5 flex flex-col gap-3">
               <p className="text-body-bn font-bengali text-text-primary leading-relaxed">
-                {result.explanation_bn}
+                {language === "bn" ? result.explanation_bn : result.explanation_en}
               </p>
-              <p className="text-body text-text-secondary">
-                {result.explanation_en}
-              </p>
+              {language === "bn" && (
+                <p className="text-body text-text-secondary">
+                  {result.explanation_en}
+                </p>
+              )}
             </div>
           </section>
 
           {/* Metadata */}
           <section className="flex items-center gap-4 text-caption text-text-tertiary">
-            <span>Confidence: {Math.round(result.confidence * 100)}%</span>
+            <span>{t.confidence}: {Math.round(result.confidence * 100)}%</span>
             <span>•</span>
             <span>{result.processing_time_ms}ms</span>
             {result.cached && (
               <>
                 <span>•</span>
-                <span className="text-accent-blue">Cached</span>
+                <span className="text-accent-blue">{t.cached}</span>
               </>
             )}
           </section>
@@ -163,10 +173,10 @@ export function ResultsContent() {
       {!result && !isAnalyzing && !error && (
         <div className="flex flex-col items-center gap-4 py-16">
           <p className="text-body text-text-secondary">
-            No analysis results yet.
+            {t.noResults}
           </p>
           <a href="/" className="text-body text-accent-blue hover:underline">
-            Start a new analysis →
+            {t.startAnalysis}
           </a>
         </div>
       )}

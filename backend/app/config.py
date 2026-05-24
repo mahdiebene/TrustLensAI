@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Pollinations AI
     POLLINATIONS_API_KEY: str = ""
-    POLLINATIONS_BASE_URL: str = "https://gen.pollinations.ai"
+    POLLINATIONS_BASE_URL: str = "https://text.pollinations.ai/"
 
     # PostgreSQL
     POSTGRES_HOST: str = "localhost"

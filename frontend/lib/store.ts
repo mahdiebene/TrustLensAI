@@ -21,9 +21,13 @@ interface AnalysisResult {
   processing_time_ms: number;
 }
 
+type Theme = "light" | "dark" | "system";
+
 interface AppState {
   language: "bn" | "en";
   setLanguage: (lang: "bn" | "en") => void;
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
   isAnalyzing: boolean;
   setIsAnalyzing: (v: boolean) => void;
   analysisStatus: string;
@@ -35,6 +39,8 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   language: "bn",
   setLanguage: (lang) => set({ language: lang }),
+  theme: "system",
+  setTheme: (theme) => set({ theme }),
   isAnalyzing: false,
   setIsAnalyzing: (v) => set({ isAnalyzing: v }),
   analysisStatus: "",

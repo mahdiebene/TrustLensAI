@@ -147,9 +147,15 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
         AuthorNetworkPillar(),
     ]
 
-    # Run all pillars in parallel
+    # Run pillars with limited concurrency (max 2 at a time to avoid rate limits)
+    semaphore = asyncio.Semaphore(2)
+
+    async def run_pillar(pillar):
+        async with semaphore:
+            return await pillar.analyze(content, image_url)
+
     results: list[PillarScore] = await asyncio.gather(
-        *[pillar.analyze(content, image_url) for pillar in pillars]
+        *[run_pillar(pillar) for pillar in pillars]
     )
 
     # Calculate weighted score

@@ -65,3 +65,8 @@ setup_vps_remote*.py
 vps_output.txt
 deploy_output.txt
 *.bak
+fix_vps_env.py
+test_vps_api.py
+test_api_quick.py
+check_logs.py
+deploy_backend.py

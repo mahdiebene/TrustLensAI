@@ -4,11 +4,13 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useStore } from "@/lib/store";
+import { useI18n } from "@/lib/useI18n";
 import { analyzeContent } from "@/lib/api";
 
 export function InputForm() {
   const router = useRouter();
-  const { setResult, setIsAnalyzing, setAnalysisStatus } = useStore();
+  const t = useI18n();
+  const { setResult, setIsAnalyzing, setAnalysisStatus, language } = useStore();
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [detectedLang, setDetectedLang] = useState<"BN" | "EN" | "Mixed" | null>(null);
@@ -57,10 +59,10 @@ export function InputForm() {
     setResult(null);
 
     const statuses = [
-      "উৎস যাচাই করা হচ্ছে...",
-      "ভাষা বিশ্লেষণ করা হচ্ছে...",
-      "ক্রস-রেফারেন্সিং...",
-      "স্কোর তৈরি করা হচ্ছে...",
+      t.checkingSources,
+      t.analyzingLanguage,
+      t.crossReferencing,
+      t.generatingScore,
     ];
 
     let statusIndex = 0;
@@ -81,7 +83,6 @@ export function InputForm() {
       clearInterval(statusInterval);
       setIsAnalyzing(false);
       console.error("Analysis failed:", error);
-      // Still navigate to results to show error
       router.push("/results");
     } finally {
       setIsSubmitting(false);
@@ -99,13 +100,13 @@ export function InputForm() {
           className={`
             min-h-[120px] p-4 rounded-lg
             bg-surface-1 border border-surface-3/40
-            text-body-bn text-text-primary
+            text-body-bn text-text-primary font-bengali
             focus:outline-none focus:border-accent-blue focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)]
             transition-all duration-200 ease-enter
             ${isSubmitting ? "opacity-50 pointer-events-none" : ""}
             empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary
           `}
-          data-placeholder="পোস্ট বা লিংক পেস্ট করুন..."
+          data-placeholder={t.placeholder}
           role="textbox"
           aria-label="Content to analyze"
         />
@@ -128,7 +129,7 @@ export function InputForm() {
             animate={{ opacity: 1, y: 0 }}
             className="absolute bottom-3 left-4 px-2 py-0.5 rounded text-caption bg-accent-blue/10 text-accent-blue"
           >
-            URL detected
+            {t.urlDetected}
           </motion.span>
         )}
 
@@ -157,7 +158,7 @@ export function InputForm() {
           active:scale-[0.99]
         `}
       >
-        {isSubmitting ? "বিশ্লেষণ চলছে..." : "বিশ্লেষণ করুন"}
+        {isSubmitting ? t.analyzing : t.analyze}
       </button>
 
       {/* Progress text during analysis */}
