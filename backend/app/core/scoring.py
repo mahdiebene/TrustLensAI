@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 
 from app.core.pillars.source_reputation import SourceReputationPillar
@@ -96,7 +97,6 @@ async def synthesize_explanation(
             lines = text.split("\n")
             text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
 
-        import re
         json_match = re.search(r'\{[\s\S]*\}', text)
         if json_match:
             result = json.loads(json_match.group())
