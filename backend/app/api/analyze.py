@@ -10,6 +10,10 @@ from app.core.scoring import run_analysis
 from app.services.redis_client import get_cache_service
 
 router = APIRouter()
+
+# Use the same key_func as the app-level limiter
+# The actual limiter instance is attached to app.state.limiter in main.py
+# slowapi uses the app's limiter when the decorator is applied
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -30,9 +34,9 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
     cache = get_cache_service()
     cached_result = await cache.get_cached(cache_key)
     if cached_result:
-        result = AnalyzeResponse(**cached_result)
-        result.cached = True
-        return result
+        # Reconstruct response from cache and mark as cached
+        cached_result["cached"] = True
+        return AnalyzeResponse(**cached_result)
 
     # Run analysis pipeline
     result = await run_analysis(content=body.content, image_url=body.image_url)

@@ -25,9 +25,6 @@ async def lifespan(app: FastAPI):
     print("[TrustLens] Shutting down...")
 
 
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
-
 # Create FastAPI app
 app = FastAPI(
     title="TrustLens API",
@@ -36,7 +33,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Rate limiting
+# Rate limiting — single shared instance
+# Import the limiter from analyze.py so it's the same instance
+from app.api.analyze import limiter  # noqa: E402
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
