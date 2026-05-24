@@ -18,8 +18,10 @@ MODEL_MAP = {
     "embeddings": "openai-3-large",
 }
 
-# Pollinations OpenAI-compatible API endpoint (supports API key auth)
-OPENAI_COMPAT_URL = "https://text.pollinations.ai/openai"
+# Pollinations API base URL (OpenAI-compatible)
+# Docs: https://gen.pollinations.ai/docs
+# Endpoints: POST /v1/chat/completions, POST /v1/embeddings
+BASE_URL = "https://gen.pollinations.ai"
 
 
 class PollinationsClient:
@@ -30,7 +32,7 @@ class PollinationsClient:
         self._api_key = settings.POLLINATIONS_API_KEY
         self._max_retries = 3
         self._base_delay = 2.0
-        # Use a shared client with connection pooling
+        # Shared client with connection pooling — limit concurrency
         self._http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(90.0, connect=10.0),
             limits=httpx.Limits(max_connections=3, max_keepalive_connections=2),
@@ -59,7 +61,7 @@ class PollinationsClient:
                     headers["Authorization"] = f"Bearer {self._api_key}"
 
                 response = await self._http_client.post(
-                    f"{OPENAI_COMPAT_URL}/v1/chat/completions",
+                    f"{BASE_URL}/v1/chat/completions",
                     json=payload,
                     headers=headers,
                     timeout=timeout,
@@ -80,6 +82,11 @@ class PollinationsClient:
                     else:
                         error_text = response.text[:200]
                         raise Exception(f"HTTP 429 after all retries: {error_text}")
+                elif response.status_code == 400:
+                    # Safety filter or bad request — don't retry
+                    error_text = response.text[:300]
+                    logger.error(f"[Pollinations] Bad request for {model}: {error_text}")
+                    raise Exception(f"HTTP 400: {error_text}")
                 else:
                     error_text = response.text[:200]
                     raise Exception(f"HTTP {response.status_code}: {error_text}")
@@ -122,7 +129,7 @@ class PollinationsClient:
                 }
 
                 response = await self._http_client.post(
-                    f"{OPENAI_COMPAT_URL}/v1/embeddings",
+                    f"{BASE_URL}/v1/embeddings",
                     json=payload,
                     headers=headers,
                     timeout=30.0,
