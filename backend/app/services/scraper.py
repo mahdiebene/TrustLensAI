@@ -1,19 +1,21 @@
 """Web scraping utilities for URL content extraction.
 
 Extracts text content from URLs, especially Facebook posts.
-Uses mbasic.facebook.com for simpler HTML parsing.
+Uses Playwright headless browser for Facebook (renders JS like a real browser).
+Uses httpx + BeautifulSoup for generic URLs.
 """
 
 import re
 import logging
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)
 
-# Browser-like headers
+# Browser-like headers for generic scraping
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -28,12 +30,14 @@ def is_url(text: str) -> bool:
 
 
 def normalize_facebook_url(url: str) -> str:
-    """Convert any Facebook URL to mbasic.facebook.com for easier scraping."""
+    """Normalize Facebook URL to www.facebook.com for Playwright rendering."""
     parsed = urlparse(url)
-    # Replace any facebook domain with mbasic
-    if "facebook.com" in parsed.netloc:
-        new_netloc = "mbasic.facebook.com"
-        return urlunparse(parsed._replace(netloc=new_netloc, scheme="https"))
+    if "facebook.com" in parsed.netloc or "fb.com" in parsed.netloc:
+        # Use www.facebook.com (full desktop version renders best in headless)
+        new_url = url.replace("web.facebook.com", "www.facebook.com")
+        new_url = new_url.replace("m.facebook.com", "www.facebook.com")
+        new_url = new_url.replace("mbasic.facebook.com", "www.facebook.com")
+        return new_url
     return url
 
 
@@ -58,7 +62,7 @@ async def scrape_url(url: str) -> dict:
         parsed = urlparse(url)
         result["source_domain"] = parsed.netloc
 
-        # Facebook-specific scraping
+        # Facebook-specific scraping with Playwright
         if "facebook.com" in parsed.netloc or "fb.com" in parsed.netloc:
             return await scrape_facebook(url, result)
 
@@ -72,109 +76,215 @@ async def scrape_url(url: str) -> dict:
 
 
 async def scrape_facebook(url: str, result: dict) -> dict:
-    """Scrape a Facebook post using mbasic.facebook.com."""
-    mbasic_url = normalize_facebook_url(url)
-    logger.info(f"[Scraper] Scraping Facebook: {mbasic_url}")
+    """Scrape a Facebook post using Playwright headless browser.
+
+    This launches a real Chromium browser in headless mode, navigates to the
+    Facebook URL, waits for the page to render (including JS), then extracts
+    the post content from the rendered DOM.
+
+    Works for public posts without login.
+    """
+    fb_url = normalize_facebook_url(url)
+    logger.info(f"[Scraper] Scraping Facebook with Playwright: {fb_url}")
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--single-process",
+                ]
+            )
+
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 900},
+                locale="en-US",
+            )
+
+            page = await context.new_page()
+
+            # Navigate to the Facebook URL
+            await page.goto(fb_url, wait_until="domcontentloaded", timeout=30000)
+
+            # Wait a bit for dynamic content to load
+            await page.wait_for_timeout(3000)
+
+            # Try to close any login popups/overlays that Facebook shows
+            try:
+                close_btn = page.locator('[aria-label="Close"]').first
+                if await close_btn.is_visible(timeout=2000):
+                    await close_btn.click()
+                    await page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+            # Strategy 1: Extract from meta tags (most reliable for public posts)
+            title = await page.evaluate("""
+                () => {
+                    const og = document.querySelector('meta[property="og:title"]');
+                    return og ? og.content : '';
+                }
+            """)
+
+            description = await page.evaluate("""
+                () => {
+                    const og = document.querySelector('meta[property="og:description"]');
+                    return og ? og.content : '';
+                }
+            """)
+
+            # Strategy 2: Extract post text from rendered DOM
+            post_text = await page.evaluate("""
+                () => {
+                    // Facebook post content selectors (public posts)
+                    const selectors = [
+                        '[data-ad-preview="message"]',
+                        '[data-testid="post_message"]',
+                        'div[dir="auto"][style*="text-align"]',
+                        'div[dir="auto"]',
+                    ];
+
+                    let texts = [];
+
+                    for (const selector of selectors) {
+                        const elements = document.querySelectorAll(selector);
+                        for (const el of elements) {
+                            const text = el.innerText.trim();
+                            if (text.length > 30 && !text.includes('Log in') && !text.includes('Sign up')) {
+                                texts.push(text);
+                            }
+                        }
+                        if (texts.length > 0) break;
+                    }
+
+                    // Deduplicate (child elements may repeat parent text)
+                    if (texts.length > 1) {
+                        texts = texts.filter((t, i) => {
+                            for (let j = 0; j < texts.length; j++) {
+                                if (i !== j && texts[j].includes(t) && texts[j].length > t.length) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        });
+                    }
+
+                    return texts.join('\\n\\n');
+                }
+            """)
+
+            # Strategy 3: Get all visible text as fallback
+            if not post_text and not description:
+                post_text = await page.evaluate("""
+                    () => {
+                        const body = document.body.innerText;
+                        const lines = body.split('\\n')
+                            .map(l => l.trim())
+                            .filter(l => l.length > 30)
+                            .filter(l => !l.includes('Log in') && !l.includes('Sign up') && !l.includes('Create new account'));
+                        return lines.slice(0, 20).join('\\n');
+                    }
+                """)
+
+            # Extract author name
+            author = await page.evaluate("""
+                () => {
+                    // Try h2 links (page/profile name on posts)
+                    const h2Link = document.querySelector('h2 a, h3 a, [data-testid="story-subtitle"] a');
+                    if (h2Link) return h2Link.innerText.trim();
+
+                    // Try strong tags
+                    const strong = document.querySelector('strong a');
+                    if (strong) return strong.innerText.trim();
+
+                    // Try og:title which often has "Author - post text"
+                    const og = document.querySelector('meta[property="og:title"]');
+                    if (og && og.content) {
+                        const parts = og.content.split(' - ');
+                        if (parts.length > 1) return parts[0].trim();
+                    }
+
+                    return '';
+                }
+            """)
+
+            # Extract images
+            images = await page.evaluate("""
+                () => {
+                    const imgs = document.querySelectorAll('img[src*="scontent"]');
+                    return Array.from(imgs)
+                        .map(img => img.src)
+                        .filter(src => src.includes('scontent') && !src.includes('emoji'))
+                        .slice(0, 5);
+                }
+            """)
+
+            await browser.close()
+
+            # Assemble result
+            # Prefer post_text from DOM, fall back to og:description
+            final_text = post_text if post_text and len(post_text) > 20 else description
+            if not final_text:
+                final_text = title
+
+            if final_text:
+                result["text"] = final_text.strip()[:5000]
+                result["success"] = True
+            else:
+                result["text"] = f"[Facebook post] URL: {url}. Public content could not be fully extracted."
+
+            result["title"] = title or ""
+            result["author"] = author or ""
+            result["images"] = images or []
+
+            logger.info(f"[Scraper] Playwright Facebook: extracted {len(result['text'])} chars, author='{result['author']}'")
+            return result
+
+    except Exception as e:
+        logger.error(f"[Scraper] Playwright Facebook failed: {e}")
+        # Fallback to httpx method for meta tags
+        return await scrape_facebook_fallback(url, result)
+
+
+async def scrape_facebook_fallback(url: str, result: dict) -> dict:
+    """Fallback Facebook scraper using httpx (for when Playwright fails)."""
+    logger.info(f"[Scraper] Trying fallback httpx scraper for: {url}")
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-        # Try mbasic first (simplest HTML)
         try:
-            response = await client.get(mbasic_url, headers=HEADERS)
+            response = await client.get(url, headers=HEADERS)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
 
-                # Extract post text from mbasic
-                # mbasic uses simple div structure
-                post_text = ""
-
-                # Method 1: Look for the main post content div
-                story_div = soup.find("div", {"class": "story_body_container"})
-                if story_div:
-                    # Get text paragraphs
-                    for p in story_div.find_all(["p", "div"], recursive=False):
-                        text = p.get_text(strip=True)
-                        if text and len(text) > 5:
-                            post_text += text + "\n"
-
-                # Method 2: Look for data-ft divs (post content)
-                if not post_text:
-                    for div in soup.find_all("div", attrs={"data-ft": True}):
-                        text = div.get_text(strip=True)
-                        if text and len(text) > 20:
-                            post_text += text + "\n"
-                            break
-
-                # Method 3: Look for any substantial text block
-                if not post_text:
-                    # Find the largest text block on the page
-                    all_text_blocks = []
-                    for tag in soup.find_all(["p", "div", "span"]):
-                        text = tag.get_text(strip=True)
-                        if len(text) > 50 and "log in" not in text.lower() and "sign up" not in text.lower():
-                            all_text_blocks.append(text)
-
-                    if all_text_blocks:
-                        # Get the longest text block
-                        post_text = max(all_text_blocks, key=len)
-
-                # Extract author
-                author_tag = soup.find("strong") or soup.find("h3")
-                if author_tag:
-                    result["author"] = author_tag.get_text(strip=True)
-
-                # Extract title
-                title_tag = soup.find("title")
-                if title_tag:
-                    result["title"] = title_tag.get_text(strip=True)
-
-                if post_text:
-                    result["text"] = post_text.strip()
-                    result["success"] = True
-                    logger.info(f"[Scraper] Facebook mbasic: extracted {len(post_text)} chars")
-                    return result
-
-        except Exception as e:
-            logger.warning(f"[Scraper] mbasic failed: {e}")
-
-        # Fallback: try the regular mobile version
-        try:
-            mobile_url = url.replace("web.facebook.com", "m.facebook.com").replace("www.facebook.com", "m.facebook.com")
-            response = await client.get(mobile_url, headers=HEADERS)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-
-                # Look for og:description meta tag (often has post text)
+                # Try og:description meta tag
                 og_desc = soup.find("meta", property="og:description")
                 if og_desc and og_desc.get("content"):
                     result["text"] = og_desc["content"]
                     result["success"] = True
-                    logger.info(f"[Scraper] Facebook mobile og:description: {len(result['text'])} chars")
-                    return result
 
-                # Look for og:title
+                # Try og:title
                 og_title = soup.find("meta", property="og:title")
                 if og_title and og_title.get("content"):
                     result["title"] = og_title["content"]
 
-                # Try to get any visible text
-                body_text = soup.get_text(separator="\n", strip=True)
-                # Filter out navigation/login text
-                lines = [l for l in body_text.split("\n") if len(l) > 30 and "log in" not in l.lower() and "sign up" not in l.lower() and "facebook" not in l.lower()]
-                if lines:
-                    result["text"] = "\n".join(lines[:10])
-                    result["success"] = True
+                if result["text"]:
+                    logger.info(f"[Scraper] Fallback got og:description: {len(result['text'])} chars")
                     return result
 
         except Exception as e:
-            logger.warning(f"[Scraper] Mobile FB failed: {e}")
+            logger.warning(f"[Scraper] Fallback httpx also failed: {e}")
 
-    # If all methods fail
-    result["text"] = f"[Facebook post from {result.get('author', 'unknown')}] URL: {url}. Content extraction partially failed."
+    result["text"] = f"[Facebook post] URL: {url}. Content extraction failed - post may be private or restricted."
     return result
 
 
 async def scrape_generic(url: str, result: dict) -> dict:
-    """Scrape a generic webpage."""
+    """Scrape a generic webpage using httpx + BeautifulSoup."""
     logger.info(f"[Scraper] Scraping generic URL: {url}")
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
