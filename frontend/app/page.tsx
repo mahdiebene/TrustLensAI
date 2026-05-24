@@ -1,4 +1,5 @@
 import { InputForm } from "@/components/InputForm";
+import { LanguageToggle } from "@/components/LanguageToggle";
 
 export default function HomePage() {
   return (
@@ -13,7 +14,8 @@ export default function HomePage() {
             TrustLens
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <LanguageToggle />
           <span className="text-caption text-text-tertiary caps-wide uppercase">
             Beta
           </span>
@@ -23,7 +25,7 @@ export default function HomePage() {
       {/* Input Section */}
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <h2 className="text-body text-text-secondary">
+          <h2 className="text-body text-text-secondary font-bengali">
             পোস্ট, আর্টিকেল বা লিংক বিশ্লেষণ করুন
           </h2>
         </div>
