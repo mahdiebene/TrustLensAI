@@ -78,7 +78,7 @@ class AuthorNetworkPillar(BasePillar):
                     {"role": "user", "content": f"Analyze the author/network credibility of this content:\n\n{content}"},
                 ],
                 temperature=0.2,
-                timeout=30.0,
+                timeout=90.0,
             )
 
             result = self._parse_response(response)

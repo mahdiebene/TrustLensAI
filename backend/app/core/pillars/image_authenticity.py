@@ -93,7 +93,7 @@ class ImageAuthenticityPillar(BasePillar):
                 model=self.model_id if image_url else "gemini",
                 messages=messages,
                 temperature=0.2,
-                timeout=30.0,
+                timeout=90.0,
             )
 
             result = self._parse_response(response)

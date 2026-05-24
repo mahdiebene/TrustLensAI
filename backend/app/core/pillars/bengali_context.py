@@ -74,7 +74,7 @@ class BengaliContextPillar(BasePillar):
                     {"role": "user", "content": f"Analyze this content for Bangladesh-specific misinformation patterns:\n\n{content}"},
                 ],
                 temperature=0.2,
-                timeout=30.0,
+                timeout=90.0,
             )
 
             result = self._parse_response(response)

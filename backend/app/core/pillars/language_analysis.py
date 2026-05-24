@@ -66,7 +66,7 @@ class LanguageAnalysisPillar(BasePillar):
                     {"role": "user", "content": f"Analyze this content for manipulation patterns:\n\n{content}"},
                 ],
                 temperature=0.2,
-                timeout=30.0,
+                timeout=90.0,
             )
 
             # Parse JSON response
