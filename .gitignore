@@ -60,4 +60,8 @@ htmlcov/
 # Misc
 check_vps*.py
 test_pollinations.py
+deploy_vps*.py
+setup_vps_remote*.py
+vps_output.txt
+deploy_output.txt
 *.bak
