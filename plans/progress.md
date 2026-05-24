@@ -1,6 +1,6 @@
 # TrustLens — Implementation Progress & Plan
 
-> **Last Updated:** 2026-05-24 | **Status:** Phase 1 COMPLETE ✅ | **Deadline:** May 30, 2026
+> **Last Updated:** 2026-05-24 | **Status:** Phases 1-3 COMPLETE ✅ | **Deadline:** May 30, 2026
 
 ---
 
@@ -8,92 +8,101 @@
 
 | # | Task | Status | Phase |
 |---|------|--------|-------|
-| 1A | Monorepo scaffold | ✅ Done | 1 |
-| 1B | Backend foundation (FastAPI + config + models) | ✅ Done | 1 |
-| 1C | Pollinations API client + Redis caching | ✅ Done | 1 |
-| 1D | Pillar 2 - Content Consistency | ✅ Done | 1 |
-| 1E | Pillar 3 - Language Analysis | ✅ Done | 1 |
-| 1F | POST /api/analyze endpoint | ✅ Done | 1 |
-| 1G | Frontend scaffold (Next.js 14 + Tailwind + fonts) | ✅ Done | 1 |
-| 1H | InputForm component | ✅ Done | 1 |
-| 1I | TrustGauge component | ✅ Done | 1 |
-| 1J | PillarCard components | ✅ Done | 1 |
-| 1K | Results page + scan animation | ✅ Done | 1 |
-| 1L | Docker Compose | ✅ Done | 1 |
-| 2A | Pillar 1 - Source Reputation | ⬜ Next | 2 |
-| 2B | Pillar 4 - Bengali Context | ⬜ Next | 2 |
-| 2C | Pillar 5 - Image Authenticity | ⬜ Next | 2 |
-| 2D | Pillar 6 - Author/Network | ⬜ Next | 2 |
-| 2E | Score synthesis gpt-5.5 | ⬜ Next | 2 |
-| 2F | RAG pipeline (chunking + pgvector) | ⬜ | 2 |
-| 2G | Neo4j Graph RAG | ⬜ | 2 |
-| 2H | RadarChart component | ⬜ | 2 |
-| 2I | LanguageToggle + i18n | ⬜ | 2 |
-| 2J | Full results page with evidence | ⬜ | 2 |
-| 3A | Telegram bot | ⬜ | 3 |
-| 3B | Chrome extension | ⬜ | 3 |
-| 3C | n8n workflows | ⬜ | 3 |
-| 4A | VPS deployment | ⬜ | 4 |
-| 4B | Nginx + SSL | ⬜ | 4 |
-| 4C | Final testing + submission | ⬜ | 4 |
+| 1A-1L | Phase 1: Foundation | ✅ Done | 1 |
+| 2A | Pillar 1 - Source Reputation (gemini) | ✅ Done | 2 |
+| 2B | Pillar 4 - Bengali Context (qwen-large) | ✅ Done | 2 |
+| 2C | Pillar 5 - Image Authenticity (qwen-vision-pro) | ✅ Done | 2 |
+| 2D | Pillar 6 - Author/Network (gemini) | ✅ Done | 2 |
+| 2E | Score synthesis (gpt-5.5 + fallback) | ✅ Done | 2 |
+| 2F | RAG pipeline (chunking + enrichment + pgvector) | ✅ Done | 2 |
+| 2G | Neo4j Graph RAG | ✅ Done | 2 |
+| 2H | RadarChart (clockwise 800ms draw) | ✅ Done | 2 |
+| 2I | LanguageToggle (bn/en) | ✅ Done | 2 |
+| 2J | Full results page | ✅ Done | 2 |
+| 3A | Telegram bot | ✅ Done | 3 |
+| 3B | Chrome extension | ✅ Done | 3 |
+| 3C | n8n workflows (documented) | ✅ Done | 3 |
+| 4A | VPS deployment | ⬜ Ready | 4 |
+| 4B | Nginx + SSL | ⬜ Ready | 4 |
+| 4C | Final testing | ⬜ Ready | 4 |
 
 ---
 
-## Phase 1 Summary (COMPLETE)
+## Git Log
 
-### What was built:
+```
+d63c4b8 feat: Phase 3A-3B - Telegram bot + Chrome extension
+cc69051 feat: Phase 2H-2I - Enhanced RadarChart + LanguageToggle in layout
+bcc40a1 feat: Phase 2F-2G - RAG pipeline + Graph RAG implementation
+cca2193 feat: Phase 2A-2E - All 6 pillars with real AI + gpt-5.5 synthesis
+0edeb0c fix: rate limiter shared instance + cache response reconstruction
+2f995a6 feat: Phase 1 foundation - monorepo scaffold with backend + frontend
+```
 
-**Backend (Python FastAPI):**
-- FastAPI app with CORS, rate limiting (10/min), lifespan events
-- Pydantic models for request/response (AnalyzeRequest, AnalyzeResponse, PillarScore)
-- Health endpoint (GET /api/health) with Redis connectivity check
-- Analyze endpoint (POST /api/analyze) with caching
-- Pollinations AI client (AsyncOpenAI SDK, 3 retries, exponential backoff)
-- Redis caching service (content hash keys, 24h TTL)
-- 6 pillar scoring engine with parallel execution (asyncio.gather)
-- Pillar 2 (Content Consistency) — real perplexity-reasoning integration
-- Pillar 3 (Language Analysis) — real claude model integration
-- Pillars 1, 4, 5, 6 — placeholder stubs returning neutral scores
-- Score aggregation with weighted formula and verdict mapping
-- Docker-ready with python:3.12-slim Dockerfile
+---
 
-**Frontend (Next.js 14):**
-- App Router with dark-first design system
-- Custom Tailwind config with design tokens (surfaces, text, semantic colors)
-- Inter + Hind Siliguri + JetBrains Mono font stack
-- InputForm: content-editable div, URL detection, language pill (BN/EN/Mixed)
-- TrustGauge: 270-degree SVG arc, spring animation, score overshoot
-- PillarCard: left accent bar, expand inline, stagger animation
-- RadarChart: hexagonal SVG with animated data polygon
-- ScanAnimation: horizontal sweep line loading state
-- Results page with Suspense boundary, progressive reveal
-- API proxy route (/api/analyze) to avoid CORS
-- Zustand store for state management
-- i18n strings dictionary (Bengali + English)
-- Builds successfully (verified with `next build`)
+## What's Built
 
-**Infrastructure:**
-- Docker Compose with postgres+pgvector, neo4j, redis, n8n, backend
-- All services with healthchecks and memory limits
+### Backend (Python FastAPI)
+- 6 AI-powered trust scoring pillars (all with real Pollinations API integration)
+- Score synthesis via gpt-5.5 with template fallback
+- Parallel execution of all pillars (asyncio.gather)
+- Redis caching with content hash keys (24h TTL)
+- Rate limiting (10/min per IP)
+- RAG pipeline: semantic chunking + contextual enrichment + embeddings
+- Neo4j Graph RAG with schema and query patterns
+- Health endpoint with service connectivity checks
+
+### Frontend (Next.js 14)
+- Dark-first design system (Linear/Vercel quality)
+- TrustGauge: 270° SVG arc, spring physics, score overshoot
+- RadarChart: hexagonal SVG, clockwise 800ms draw, fill fade
+- PillarCards: 3px accent bar, expand inline, stagger animation
+- InputForm: content-editable, URL detection, language pill, scan animation
+- Results page: progressive reveal, evidence section
+- LanguageToggle: Bengali/English switching
+- API proxy route (avoids CORS)
+- Zustand state management + i18n strings
+
+### Extensions
+- Telegram bot: /start, /analyze, forward-to-analyze, Bengali UI
+- Chrome extension: Manifest V3, dark popup, auto-fill URL, score display
+
+### Infrastructure
+- Docker Compose: postgres+pgvector, neo4j, redis, n8n, backend
 - Nginx reverse proxy config
-- VPS setup script
+- VPS setup script (Ubuntu 26.04)
 - Deployment script
 
-**Extensions (scaffolded):**
-- Chrome Extension manifest.json (Manifest V3)
-- Telegram bot placeholder
-- n8n workflow documentation
-
-### Git:
-- Initial commit: 71 files, 10,492 insertions
-- Branch: master
-
 ---
 
-## Next Steps (Phase 2)
+## Phase 4 — Deployment (Ready to Execute)
 
-Priority order for Phase 2:
-1. Implement remaining 4 pillars with real AI integration
-2. Score synthesis via gpt-5.5
-3. RAG pipeline + Neo4j Graph RAG
-4. Complete frontend (RadarChart animation, LanguageToggle, evidence section)
+All scripts are in place. To deploy:
+
+```bash
+# 1. SSH to VPS
+ssh root@107.161.168.216
+
+# 2. Run setup script
+bash scripts/setup-vps.sh
+
+# 3. Clone repo
+git clone <repo-url> /opt/trustlens
+cd /opt/trustlens
+
+# 4. Create .env from .env.example with real values
+cp .env.example .env
+nano .env
+
+# 5. Start services
+docker compose up -d
+
+# 6. Configure Nginx
+cp nginx/trustlens.conf /etc/nginx/sites-available/
+ln -s /etc/nginx/sites-available/trustlens.conf /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+
+# 7. SSL (if domain configured)
+certbot --nginx -d trustlens.example.com
+```
