@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces — Light Mode */
+    --surface-0: #fafafa;
+    --surface-1: #ffffff;
+    --surface-2: #f4f4f5;
+    --surface-3: #e4e4e7;
+
+    /* Text — Light Mode */
+    --text-primary: #09090b;
+    --text-secondary: #52525b;
+    --text-tertiary: #a1a1aa;
+
+    /* Semantic Colors */
+    --trust-high: #22c55e;
+    --trust-medium: #eab308;
+    --trust-low: #ef4444;
+    --accent-blue: #3b82f6;
+
+    /* Glow effects */
+    --glow-green: rgba(34, 197, 94, 0.15);
+    --glow-amber: rgba(234, 179, 8, 0.15);
+    --glow-red: rgba(239, 68, 68, 0.15);
+  }
+
+  .dark {
+    /* Surfaces — Dark Mode (Primary) */
+    --surface-0: #09090b;
+    --surface-1: #0f0f12;
+    --surface-2: #18181b;
+    --surface-3: #27272a;
+
+    /* Text — Dark Mode */
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #52525b;
+  }
+
+  html {
+    font-family: "Inter", "Hind Siliguri", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  body {
+    background-color: var(--surface-0);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Bengali text defaults */
+  [lang="bn"],
+  .font-bengali {
+    font-family: "Hind Siliguri", "Noto Sans Bengali", sans-serif;
+    line-height: 1.75;
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  /* Score colors utility */
+  .score-high {
+    color: var(--trust-high);
+  }
+  .score-medium {
+    color: var(--trust-medium);
+  }
+  .score-low {
+    color: var(--trust-low);
+  }
+
+  /* Card base */
+  .card {
+    background-color: var(--surface-1);
+    border: 1px solid rgba(39, 39, 42, 0.4);
+    border-radius: 8px;
+  }
+
+  /* Focus ring */
+  .focus-ring {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--accent-blue);
+  }
+}
+
+@layer utilities {
+  /* Spacing system - 8px base */
+  .gap-grid {
+    gap: 12px;
+  }
+
+  /* Typography utilities */
+  .heading-tight {
+    letter-spacing: -0.02em;
+  }
+  .score-tight {
+    letter-spacing: -0.04em;
+  }
+  .caps-wide {
+    letter-spacing: 0.05em;
+  }
+}
