@@ -1,15 +1,27 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>TrustLens</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div id="app">
-    <h1>TrustLens</h1>
-    <p>Paste content to analyze</p>
+  <div class="header">
+    <div class="logo">T</div>
+    <span class="title">TrustLens</span>
   </div>
+
+  <textarea class="input-area" id="input" placeholder="পোস্ট বা লিংক পেস্ট করুন..."></textarea>
+  <button class="btn" id="analyzeBtn">বিশ্লেষণ করুন</button>
+
+  <div class="result hidden" id="result">
+    <div class="score" id="score"></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="pillars" id="pillars"></div>
+  </div>
+
+  <div class="error hidden" id="error"></div>
+
   <script src="popup.js"></script>
 </body>
 </html>
