@@ -70,3 +70,5 @@ test_vps_api.py
 test_api_quick.py
 check_logs.py
 deploy_backend.py
+"deploy_vps.py"  
+"test_scoring.py"  
