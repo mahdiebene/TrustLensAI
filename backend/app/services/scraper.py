@@ -128,7 +128,7 @@ async def scrape_with_perplexity(url: str, result: dict) -> dict:
                 "content": SCRAPER_PROMPT.format(url=url),
             }],
             temperature=0.1,
-            timeout=15.0,
+            timeout=10.0,
         )
 
         if not response or "CANNOT_ACCESS" in response:

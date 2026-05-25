@@ -31,12 +31,12 @@ class PollinationsClient:
     def __init__(self):
         settings = get_settings()
         self._api_key = settings.POLLINATIONS_API_KEY
-        self._max_retries = 2  # Reduced from 3 for speed
-        self._base_delay = 1.5  # Reduced from 2.0 for speed
+        self._max_retries = 1  # Single attempt for speed — timeout handles failures
+        self._base_delay = 1.0
         # Shared client with connection pooling — allow more concurrency for parallel pillars
         self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(25.0, connect=8.0),
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=6),
+            timeout=httpx.Timeout(18.0, connect=5.0),
+            limits=httpx.Limits(max_connections=12, max_keepalive_connections=8),
         )
 
     async def chat(

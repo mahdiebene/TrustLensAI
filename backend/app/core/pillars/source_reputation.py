@@ -77,7 +77,7 @@ class SourceReputationPillar(BasePillar):
                     {"role": "user", "content": f"Analyze the source reputation of this content:{url_context}\n\n{content[:3000]}"},
                 ],
                 temperature=0.2,
-                timeout=18.0,
+                timeout=12.0,
             )
 
             result = self._parse_response(response)

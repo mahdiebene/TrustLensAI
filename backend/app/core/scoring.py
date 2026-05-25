@@ -19,7 +19,7 @@ from app.services.redis_client import get_cache_service
 logger = logging.getLogger(__name__)
 
 # Per-pillar timeout (seconds) — if exceeded, return neutral score
-PILLAR_TIMEOUT = 20.0
+PILLAR_TIMEOUT = 15.0
 
 # Verdict mappings
 VERDICTS = [
@@ -94,9 +94,9 @@ async def synthesize_explanation(
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                timeout=15.0,
+                timeout=10.0,
             ),
-            timeout=15.0,
+            timeout=10.0,
         )
 
         # Parse response
