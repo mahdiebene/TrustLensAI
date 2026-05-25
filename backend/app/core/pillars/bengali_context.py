@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You are an expert on Bangladeshi social media misinformation patterns.
 You understand the cultural, political, and social context of Bangladesh deeply.
 
+CRITICAL: Do NOT hallucinate or make up information. If you cannot determine something from the provided content, explicitly state 'Cannot determine from available information' and give a neutral score of 50. Never invent source names, author names, or facts that are not explicitly present in the content.
+
 Analyze the following content for Bangladesh-specific misinformation patterns:
 
 1. **Communal tension narratives** — Content designed to inflame Hindu-Muslim tensions
@@ -71,10 +73,10 @@ class BengaliContextPillar(BasePillar):
                 model=self.model_id,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Analyze this content for Bangladesh-specific misinformation patterns:\n\n{content}"},
+                    {"role": "user", "content": f"Analyze this content for Bangladesh-specific misinformation patterns:\n\n{content[:3000]}"},
                 ],
                 temperature=0.2,
-                timeout=90.0,
+                timeout=18.0,
             )
 
             result = self._parse_response(response)

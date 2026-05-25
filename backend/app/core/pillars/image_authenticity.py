@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an image forensics expert specializing in detecting AI-generated and manipulated images.
 
+CRITICAL: Do NOT hallucinate or make up information. If you cannot determine something from the provided image, explicitly state 'Cannot determine from available information' and give a neutral score of 50. Never invent details that are not visible in the image.
+
 Analyze the provided image for signs of:
 1. **AI generation** — Artifacts from DALL-E, Midjourney, Stable Diffusion (unnatural hands, text errors, impossible geometry)
 2. **Photo manipulation** — Signs of Photoshop/editing (clone stamping, inconsistent lighting, edge artifacts)
@@ -39,6 +41,8 @@ Scoring guide:
 - 0-29: Clearly AI-generated or heavily manipulated"""
 
 SYSTEM_PROMPT_NO_IMAGE = """You are an image forensics expert. The user has submitted content for analysis but no image was provided.
+
+CRITICAL: Do NOT hallucinate or make up information. Simply report that no image was available for analysis.
 
 Analyze the text content to determine if it references or describes images that might be manipulated.
 Look for:
@@ -93,7 +97,7 @@ class ImageAuthenticityPillar(BasePillar):
                 model=self.model_id if image_url else "gemini",
                 messages=messages,
                 temperature=0.2,
-                timeout=90.0,
+                timeout=18.0,
             )
 
             result = self._parse_response(response)

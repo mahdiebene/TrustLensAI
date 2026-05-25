@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 from app.core.pillars.base import BasePillar
 from app.models.schemas import PillarScore
@@ -12,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a fact-checking analyst specializing in South Asian media and Bengali content.
 Analyze the following content for factual consistency by cross-referencing with known information.
+
+CRITICAL: Do NOT hallucinate or make up information. If you cannot determine something from the provided content, explicitly state 'Cannot determine from available information' and give a neutral score of 50. Never invent source names, author names, or facts that are not explicitly present in the content.
 
 Your task:
 1. Identify the key claims made in the content
@@ -58,10 +61,10 @@ class ContentConsistencyPillar(BasePillar):
                 model=self.model_id,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Analyze this content for factual consistency:\n\n{content}"},
+                    {"role": "user", "content": f"Analyze this content for factual consistency:\n\n{content[:3000]}"},
                 ],
                 temperature=0.2,
-                timeout=90.0,
+                timeout=18.0,
             )
 
             # Parse JSON response
@@ -104,7 +107,6 @@ class ContentConsistencyPillar(BasePillar):
             return json.loads(text)
         except json.JSONDecodeError:
             # Try to extract JSON from the response
-            import re
             json_match = re.search(r'\{[\s\S]*\}', text)
             if json_match:
                 try:

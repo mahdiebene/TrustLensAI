@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a social media forensics analyst specializing in detecting bot accounts, coordinated inauthentic behavior, and network manipulation patterns.
 
+CRITICAL: Do NOT hallucinate or make up information. If you cannot determine something from the provided content, explicitly state 'Cannot determine from available information' and give a neutral score of 50. Never invent source names, author names, or facts that are not explicitly present in the content.
+
 Analyze the following content for author/network credibility indicators:
 
 1. **Account patterns** — Does the content show signs of being from a bot or fake account?
@@ -75,10 +77,10 @@ class AuthorNetworkPillar(BasePillar):
                 model=self.model_id,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Analyze the author/network credibility of this content:\n\n{content}"},
+                    {"role": "user", "content": f"Analyze the author/network credibility of this content:\n\n{content[:3000]}"},
                 ],
                 temperature=0.2,
-                timeout=90.0,
+                timeout=18.0,
             )
 
             result = self._parse_response(response)

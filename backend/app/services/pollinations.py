@@ -14,7 +14,8 @@ MODEL_MAP = {
     "bengali_context": "qwen-large",
     "image_authenticity": "qwen-vision-pro",
     "author_network": "gemini",
-    "synthesis": "gpt-5.5",
+    "synthesis": "gemini",
+    "scraper": "perplexity-reasoning",
     "embeddings": "openai-3-large",
 }
 
@@ -30,12 +31,12 @@ class PollinationsClient:
     def __init__(self):
         settings = get_settings()
         self._api_key = settings.POLLINATIONS_API_KEY
-        self._max_retries = 3
-        self._base_delay = 2.0
-        # Shared client with connection pooling — limit concurrency
+        self._max_retries = 2  # Reduced from 3 for speed
+        self._base_delay = 1.5  # Reduced from 2.0 for speed
+        # Shared client with connection pooling — allow more concurrency for parallel pillars
         self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(90.0, connect=10.0),
-            limits=httpx.Limits(max_connections=3, max_keepalive_connections=2),
+            timeout=httpx.Timeout(25.0, connect=8.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=6),
         )
 
     async def chat(
@@ -43,7 +44,7 @@ class PollinationsClient:
         model: str,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        timeout: float = 60.0,
+        timeout: float = 20.0,
     ) -> str:
         """Call chat completions using Pollinations OpenAI-compatible endpoint."""
         for attempt in range(self._max_retries):
@@ -73,8 +74,8 @@ class PollinationsClient:
                     logger.info(f"[Pollinations] model={model} chars={len(content)} attempt={attempt + 1}")
                     return content
                 elif response.status_code == 429:
-                    # Rate limited — wait longer
-                    delay = self._base_delay * (2 ** attempt) + 1.0
+                    # Rate limited — wait briefly
+                    delay = self._base_delay * (2 ** attempt)
                     logger.warning(f"[Pollinations] Rate limited for {model}, waiting {delay}s (attempt {attempt + 1})")
                     if attempt < self._max_retries - 1:
                         await asyncio.sleep(delay)
@@ -101,9 +102,9 @@ class PollinationsClient:
 
             except Exception as e:
                 if "429" in str(e) or "Rate" in str(e):
-                    delay = self._base_delay * (2 ** attempt) + 1.0
-                else:
                     delay = self._base_delay * (2 ** attempt)
+                else:
+                    delay = self._base_delay
                 logger.warning(f"[Pollinations] Retry {attempt + 1}/{self._max_retries} for {model}: {e}")
                 if attempt < self._max_retries - 1:
                     await asyncio.sleep(delay)
@@ -132,7 +133,7 @@ class PollinationsClient:
                     f"{BASE_URL}/v1/embeddings",
                     json=payload,
                     headers=headers,
-                    timeout=30.0,
+                    timeout=20.0,
                 )
 
                 if response.status_code == 200:

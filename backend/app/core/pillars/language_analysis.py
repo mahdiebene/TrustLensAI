@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 from app.core.pillars.base import BasePillar
 from app.models.schemas import PillarScore
@@ -12,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a linguistic analysis expert specializing in detecting manipulation, propaganda, and misinformation patterns in Bengali and English text.
 
+CRITICAL: Do NOT hallucinate or make up information. If you cannot determine something from the provided content, explicitly state 'Cannot determine from available information' and give a neutral score of 50. Never invent source names, author names, or facts that are not explicitly present in the content.
+
 Analyze the following content for:
 1. Emotional manipulation / sensationalism
 2. Clickbait patterns (exaggerated claims, urgency)
@@ -19,9 +22,9 @@ Analyze the following content for:
 4. Propaganda techniques (bandwagon, fear appeal, loaded language)
 5. Urgency/fear language designed to bypass critical thinking
 6. Bengali-specific patterns:
-   - Communal tension triggers (ধর্মীয় উত্তেজনা)
+   - Communal tension triggers
    - Political bias markers
-   - Rumor language patterns ("শোনা যাচ্ছে", "জানা গেছে")
+   - Rumor language patterns
    - Sensationalist Bengali news patterns
 
 Return a JSON object with exactly this structure:
@@ -63,10 +66,10 @@ class LanguageAnalysisPillar(BasePillar):
                 model=self.model_id,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Analyze this content for manipulation patterns:\n\n{content}"},
+                    {"role": "user", "content": f"Analyze this content for manipulation patterns:\n\n{content[:3000]}"},
                 ],
                 temperature=0.2,
-                timeout=90.0,
+                timeout=18.0,
             )
 
             # Parse JSON response
@@ -112,7 +115,6 @@ class LanguageAnalysisPillar(BasePillar):
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            import re
             json_match = re.search(r'\{[\s\S]*\}', text)
             if json_match:
                 try:

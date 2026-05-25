@@ -18,6 +18,9 @@ from app.services.redis_client import get_cache_service
 
 logger = logging.getLogger(__name__)
 
+# Per-pillar timeout (seconds) — if exceeded, return neutral score
+PILLAR_TIMEOUT = 20.0
+
 # Verdict mappings
 VERDICTS = [
     (80, "Highly Trustworthy", "অত্যন্ত বিশ্বাসযোগ্য"),
@@ -29,10 +32,12 @@ VERDICTS = [
 
 SYNTHESIS_PROMPT = """You are the final synthesis engine for TrustLens, a trust scoring platform for Bengali social media.
 
-You have received analysis results from 6 specialized AI pillars. Your job is to:
+You have received analysis results from specialized AI pillars. Your job is to:
 1. Synthesize all findings into a coherent explanation
 2. Highlight the most important factors affecting trustworthiness
 3. Provide actionable guidance to the reader
+
+CRITICAL: Do NOT hallucinate or make up information. Only reference findings that are explicitly present in the pillar results below.
 
 Pillar Results:
 {pillar_summary}
@@ -64,8 +69,8 @@ async def synthesize_explanation(
     content: str,
 ) -> tuple[str, str]:
     """
-    Use gpt-5.5 to generate a final synthesized explanation.
-    Falls back to a template-based explanation if the API call fails.
+    Use an LLM to generate a final synthesized explanation.
+    Falls back to a template-based explanation if the API call fails or times out.
     """
     try:
         # Build pillar summary for the synthesis prompt
@@ -81,14 +86,17 @@ async def synthesize_explanation(
         )
 
         client = get_pollinations_client()
-        response = await client.chat(
-            model="gpt-5.5",
-            messages=[
-                {"role": "system", "content": "You are a concise trust analysis synthesizer. Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            timeout=60.0,  # gpt-5.5 may be slower
+        response = await asyncio.wait_for(
+            client.chat(
+                model="gemini",
+                messages=[
+                    {"role": "system", "content": "You are a concise trust analysis synthesizer. Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                timeout=15.0,
+            ),
+            timeout=15.0,
         )
 
         # Parse response
@@ -105,7 +113,7 @@ async def synthesize_explanation(
         return text, text
 
     except Exception as e:
-        logger.warning(f"[Synthesis] gpt-5.5 synthesis failed, using template: {e}")
+        logger.warning(f"[Synthesis] Synthesis failed, using template: {e}")
         # Fallback: template-based explanation
         active_pillars = [r for r in pillar_results if r.active]
         top_concern = min(active_pillars, key=lambda r: r.score) if active_pillars else None
@@ -124,9 +132,48 @@ async def synthesize_explanation(
         return en, bn
 
 
+async def run_pillar_with_timeout(pillar, content: str, image_url: str | None) -> PillarScore:
+    """Run a single pillar with a timeout. Returns neutral score on timeout."""
+    try:
+        result = await asyncio.wait_for(
+            pillar.analyze(content, image_url),
+            timeout=PILLAR_TIMEOUT,
+        )
+        return result
+    except asyncio.TimeoutError:
+        logger.warning(f"[Scoring] Pillar '{pillar.name}' timed out after {PILLAR_TIMEOUT}s")
+        return PillarScore(
+            name=pillar.name,
+            name_bn=pillar.name_bn,
+            score=50.0,
+            weight=pillar.weight,
+            explanation_en=f"Analysis timed out after {PILLAR_TIMEOUT:.0f}s — neutral score assigned.",
+            explanation_bn=f"বিশ্লেষণ {PILLAR_TIMEOUT:.0f} সেকেন্ড পরে সময়সীমা অতিক্রম করেছে।",
+            evidence=["⏱️ Timed out"],
+            model_used=pillar.model_id,
+            active=False,
+        )
+    except Exception as e:
+        logger.error(f"[Scoring] Pillar '{pillar.name}' failed: {e}")
+        return PillarScore(
+            name=pillar.name,
+            name_bn=pillar.name_bn,
+            score=50.0,
+            weight=pillar.weight,
+            explanation_en=f"Analysis failed: {str(e)[:80]}",
+            explanation_bn="বিশ্লেষণে ত্রুটি হয়েছে।",
+            evidence=[],
+            model_used=pillar.model_id,
+            active=False,
+        )
+
+
 async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeResponse:
     """
     Run all 6 pillars in parallel and aggregate scores.
+
+    All pillars run concurrently with a 20s timeout each.
+    Total response target: ~15-20s.
 
     Args:
         content: Text content or URL to analyze
@@ -147,15 +194,10 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
         AuthorNetworkPillar(),
     ]
 
-    # Run pillars with limited concurrency (max 2 at a time to avoid rate limits)
-    semaphore = asyncio.Semaphore(2)
-
-    async def run_pillar(pillar):
-        async with semaphore:
-            return await pillar.analyze(content, image_url)
-
+    # Run ALL pillars in parallel (no semaphore — speed is priority)
+    # Each pillar has its own 20s timeout
     results: list[PillarScore] = await asyncio.gather(
-        *[run_pillar(pillar) for pillar in pillars]
+        *[run_pillar_with_timeout(pillar, content, image_url) for pillar in pillars]
     )
 
     # Calculate weighted score
@@ -168,7 +210,7 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
     active_count = sum(1 for r in results if r.active)
     confidence = active_count / len(results)
 
-    # Synthesize explanation using gpt-5.5
+    # Synthesize explanation (with its own timeout)
     explanation_en, explanation_bn = await synthesize_explanation(
         results, trust_score, verdict_en, content
     )

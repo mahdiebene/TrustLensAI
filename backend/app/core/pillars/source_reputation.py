@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You are a media source credibility analyst specializing in South Asian news sources.
 Analyze the source/domain of the following content for reputation and reliability.
 
+CRITICAL: Do NOT hallucinate or make up information. If you cannot determine something from the provided content, explicitly state 'Cannot determine from available information' and give a neutral score of 50. Never invent source names, author names, or facts that are not explicitly present in the content.
+
 Your task:
 1. Identify the source (domain, publication, or platform)
 2. Assess the source's credibility based on:
@@ -72,10 +74,10 @@ class SourceReputationPillar(BasePillar):
                 model=self.model_id,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Analyze the source reputation of this content:{url_context}\n\n{content}"},
+                    {"role": "user", "content": f"Analyze the source reputation of this content:{url_context}\n\n{content[:3000]}"},
                 ],
                 temperature=0.2,
-                timeout=90.0,
+                timeout=18.0,
             )
 
             result = self._parse_response(response)
