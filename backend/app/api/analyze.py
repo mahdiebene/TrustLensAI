@@ -52,11 +52,18 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
 
         if is_social_media_url(content):
             # Social media URLs: pass directly to perplexity-reasoning
-            # It has built-in web access and can read Facebook posts
+            # Instruct it to use web search to find the post content
             analysis_content = (
-                f"URL: {content}\n"
-                f"Instructions: Read this social media post URL using your web browsing capabilities. "
-                f"Extract the full content, then analyze for trustworthiness."
+                f"URL: {content}\n\n"
+                f"Instructions: This is a social media post URL. Do the following:\n"
+                f"1. Try to access and read the URL directly\n"
+                f"2. If direct access fails, SEARCH THE WEB for this exact URL or its content\n"
+                f"3. Look for cached versions, shares, screenshots, or discussions of this post\n"
+                f"4. Check fact-checking sites that may have reviewed this content\n"
+                f"5. If you find the content through any method, analyze it for trustworthiness\n"
+                f"6. If you truly cannot find the content anywhere, mark as unverifiable\n\n"
+                f"IMPORTANT: Facebook posts are often shared/discussed on other platforms. "
+                f"Search for the post content even if the direct URL is not accessible."
             )
             logger.info("[Analyze] Social media URL — passing directly to perplexity-reasoning")
         else:
