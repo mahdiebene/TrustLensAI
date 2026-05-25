@@ -31,11 +31,11 @@ class PollinationsClient:
     def __init__(self):
         settings = get_settings()
         self._api_key = settings.POLLINATIONS_API_KEY
-        self._max_retries = 1  # Single attempt for speed — timeout handles failures
+        self._max_retries = 2  # 2 attempts max for speed
         self._base_delay = 1.0
         # Shared client with connection pooling — allow more concurrency for parallel pillars
         self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(18.0, connect=5.0),
+            timeout=httpx.Timeout(14.0, connect=5.0),
             limits=httpx.Limits(max_connections=12, max_keepalive_connections=8),
         )
 
@@ -70,7 +70,11 @@ class PollinationsClient:
 
                 if response.status_code == 200:
                     data = response.json()
-                    content = data["choices"][0]["message"]["content"] or ""
+                    try:
+                        content = data["choices"][0]["message"]["content"] or ""
+                    except (KeyError, IndexError, TypeError) as parse_err:
+                        logger.error(f"[Pollinations] Unexpected response structure for {model}: {str(data)[:200]}")
+                        raise Exception(f"Unexpected response format: {parse_err}")
                     logger.info(f"[Pollinations] model={model} chars={len(content)} attempt={attempt + 1}")
                     return content
                 elif response.status_code == 429:
