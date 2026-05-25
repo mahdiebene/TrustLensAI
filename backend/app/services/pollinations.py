@@ -1,4 +1,4 @@
-"""Pollinations AI API client with retry logic."""
+"""Pollinations AI API client with retry logic and connection pooling."""
 
 import asyncio
 import logging
@@ -8,35 +8,27 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 MODEL_MAP = {
-    "source_reputation": "gemini",
-    "content_consistency": "perplexity-reasoning",
-    "language_analysis": "claude",
-    "bengali_context": "qwen-large",
-    "image_authenticity": "qwen-vision-pro",
-    "author_network": "gemini",
-    "synthesis": "gemini",
-    "scraper": "perplexity-reasoning",
+    "analysis": "perplexity-reasoning",
+    "summary": "gemini-2.5-flash",
     "embeddings": "openai-3-large",
 }
 
 # Pollinations API base URL (OpenAI-compatible)
-# Docs: https://gen.pollinations.ai/docs
-# Endpoints: POST /v1/chat/completions, POST /v1/embeddings
 BASE_URL = "https://gen.pollinations.ai"
 
 
 class PollinationsClient:
-    """Async client for Pollinations AI API with retry and caching."""
+    """Async client for Pollinations AI API with retry and connection pooling."""
 
     def __init__(self):
         settings = get_settings()
         self._api_key = settings.POLLINATIONS_API_KEY
-        self._max_retries = 2  # 2 attempts max for speed
+        self._max_retries = 2
         self._base_delay = 1.0
-        # Shared client with connection pooling — allow more concurrency for parallel pillars
+        # Large connection pool — no semaphore, let HTTP/2 handle concurrency
         self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(14.0, connect=5.0),
-            limits=httpx.Limits(max_connections=12, max_keepalive_connections=8),
+            timeout=httpx.Timeout(20.0, connect=5.0),
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         )
 
     async def chat(
@@ -78,7 +70,6 @@ class PollinationsClient:
                     logger.info(f"[Pollinations] model={model} chars={len(content)} attempt={attempt + 1}")
                     return content
                 elif response.status_code == 429:
-                    # Rate limited — wait briefly
                     delay = self._base_delay * (2 ** attempt)
                     logger.warning(f"[Pollinations] Rate limited for {model}, waiting {delay}s (attempt {attempt + 1})")
                     if attempt < self._max_retries - 1:
@@ -88,7 +79,6 @@ class PollinationsClient:
                         error_text = response.text[:200]
                         raise Exception(f"HTTP 429 after all retries: {error_text}")
                 elif response.status_code == 400:
-                    # Safety filter or bad request — don't retry
                     error_text = response.text[:300]
                     logger.error(f"[Pollinations] Bad request for {model}: {error_text}")
                     raise Exception(f"HTTP 400: {error_text}")

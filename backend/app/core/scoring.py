@@ -1,56 +1,95 @@
-"""Score aggregation and synthesis."""
+"""TrustLens scoring engine — single-call architecture.
 
-import asyncio
+Uses ONE perplexity-reasoning call for complete analysis (URL reading, claim
+extraction, web verification, all 6 pillar scores) followed by ONE gemini-2.5-flash
+call for summary generation. Total: ~13s, 2 API calls.
+"""
+
 import json
 import logging
 import re
 import time
 
-from app.core.pillars.source_reputation import SourceReputationPillar
-from app.core.pillars.content_consistency import ContentConsistencyPillar
-from app.core.pillars.language_analysis import LanguageAnalysisPillar
-from app.core.pillars.bengali_context import BengaliContextPillar
-from app.core.pillars.image_authenticity import ImageAuthenticityPillar
-from app.core.pillars.author_network import AuthorNetworkPillar
 from app.models.schemas import AnalyzeResponse, PillarScore
 from app.services.pollinations import get_pollinations_client
-from app.services.redis_client import get_cache_service
 
 logger = logging.getLogger(__name__)
 
-# Per-pillar timeout (seconds) — if exceeded, return neutral score
-PILLAR_TIMEOUT = 15.0
+# Pillar weights — content accuracy is king
+PILLAR_WEIGHTS = {
+    "content_consistency": 0.40,
+    "source_reputation": 0.20,
+    "language_analysis": 0.15,
+    "bengali_context": 0.10,
+    "author_network": 0.10,
+    "image_authenticity": 0.05,
+}
 
-# Verdict mappings
+PILLAR_NAMES_BN = {
+    "source_reputation": "উৎস সুনাম",
+    "content_consistency": "বিষয়বস্তু সামঞ্জস্য",
+    "language_analysis": "ভাষা বিশ্লেষণ",
+    "bengali_context": "বাংলাদেশ প্রসঙ্গ",
+    "image_authenticity": "ছবি সত্যতা",
+    "author_network": "লেখক নেটওয়ার্ক",
+}
+
+# Verdict mappings — now truth-focused
 VERDICTS = [
-    (80, "Highly Trustworthy", "অত্যন্ত বিশ্বাসযোগ্য"),
-    (60, "Generally Reliable", "সাধারণত নির্ভরযোগ্য"),
-    (40, "Questionable", "সন্দেহজনক"),
-    (20, "Likely Unreliable", "সম্ভবত অবিশ্বাসযোগ্য"),
-    (0, "High Risk", "উচ্চ ঝুঁকি"),
+    (85, "True / Verified", "সত্য / যাচাইকৃত"),
+    (70, "Mostly True", "অধিকাংশ সত্য"),
+    (50, "Misleading / Mixed", "বিভ্রান্তিকর / মিশ্র"),
+    (30, "Mostly False", "অধিকাংশ মিথ্যা"),
+    (15, "False", "মিথ্যা"),
+    (0, "Unverifiable", "যাচাইযোগ্য নয়"),
 ]
 
-SYNTHESIS_PROMPT = """You are the final synthesis engine for TrustLens, a trust scoring platform for Bengali social media.
+ANALYSIS_PROMPT = """You are TrustLens, a fact-checking AI for Bengali social media.
 
-You have received analysis results from specialized AI pillars. Your job is to:
-1. Synthesize all findings into a coherent explanation
-2. Highlight the most important factors affecting trustworthiness
-3. Provide actionable guidance to the reader
+Analyze this content and provide a trust assessment:
+{content}
 
-CRITICAL: Do NOT hallucinate or make up information. Only reference findings that are explicitly present in the pillar results below.
+INSTRUCTIONS:
+1. If this is a URL, READ the actual content from it
+2. Identify all factual claims made
+3. Search the web to verify or contradict each claim
+4. Assess the source's credibility
+5. Check for manipulation language patterns
+6. Consider Bangladesh-specific misinformation patterns
 
-Pillar Results:
-{pillar_summary}
+CRITICAL: Do NOT hallucinate. Only state facts you can verify. If you cannot access a URL or verify a claim, say "unverifiable" — do NOT make up information.
 
-Overall Weighted Score: {score}/100
-Verdict: {verdict}
+Return this exact JSON structure:
+{{
+  "content_extracted": "<the actual text content you read from the URL or input>",
+  "claims": [
+    {{"claim": "<specific claim>", "verdict": "true|false|unverifiable|misleading", "evidence": "<source URL or reasoning>"}}
+  ],
+  "pillar_scores": {{
+    "source_reputation": {{"score": <0-100>, "reason": "<why>"}},
+    "content_consistency": {{"score": <0-100>, "reason": "<why>"}},
+    "language_analysis": {{"score": <0-100>, "reason": "<why>"}},
+    "bengali_context": {{"score": <0-100>, "reason": "<why>"}},
+    "image_authenticity": {{"score": <0-100>, "reason": "<why>"}},
+    "author_network": {{"score": <0-100>, "reason": "<why>"}}
+  }},
+  "overall_verdict": "true|mostly_true|misleading|mostly_false|false|unverifiable",
+  "explanation_en": "<2-3 sentence English summary>",
+  "explanation_bn": "<2-3 sentence Bengali summary>"
+}}"""
 
-Generate a final explanation in BOTH English and Bengali. Be specific — reference actual findings from the pillars. Do not be generic.
+SUMMARY_PROMPT = """You are a bilingual (English/Bengali) fact-check summarizer.
+
+Given this analysis result, produce a clear, concise summary for the user.
+The user wants to know: "Is this content TRUE or FALSE?"
+
+Analysis:
+{analysis_json}
 
 Return JSON:
 {{
-  "explanation_en": "<2-3 sentence English explanation referencing specific findings>",
-  "explanation_bn": "<2-3 sentence Bengali explanation referencing specific findings>"
+  "explanation_en": "<2-3 sentence plain English summary. Start with the verdict. Be specific about what claims are true/false.>",
+  "explanation_bn": "<Same summary in Bengali. Start with verdict. Be specific.>"
 }}"""
 
 
@@ -62,170 +101,204 @@ def get_verdict(score: float) -> tuple[str, str]:
     return VERDICTS[-1][1], VERDICTS[-1][2]
 
 
-async def synthesize_explanation(
-    pillar_results: list[PillarScore],
-    trust_score: float,
-    verdict_en: str,
-    content: str,
-) -> tuple[str, str]:
-    """
-    Use an LLM to generate a final synthesized explanation.
-    Falls back to a template-based explanation if the API call fails or times out.
-    """
-    try:
-        # Build pillar summary for the synthesis prompt
-        pillar_summary = "\n".join([
-            f"- {r.name} ({r.score:.0f}/100): {r.explanation_en[:150]}"
-            for r in pillar_results if r.active
-        ])
+def _extract_json(text: str) -> dict | None:
+    """Extract JSON from a response that may contain markdown code blocks or extra text."""
+    # Remove markdown code blocks
+    if "```" in text:
+        # Try to extract content between ```json and ```
+        json_block = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+        if json_block:
+            text = json_block.group(1)
 
-        prompt = SYNTHESIS_PROMPT.format(
-            pillar_summary=pillar_summary,
-            score=f"{trust_score:.1f}",
-            verdict=verdict_en,
-        )
-
-        client = get_pollinations_client()
-        response = await asyncio.wait_for(
-            client.chat(
-                model="gemini",
-                messages=[
-                    {"role": "system", "content": "You are a concise trust analysis synthesizer. Return only valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                timeout=10.0,
-            ),
-            timeout=10.0,
-        )
-
-        # Parse response
-        text = response.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
-
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
-            result = json.loads(json_match.group())
-            return result.get("explanation_en", ""), result.get("explanation_bn", "")
-
-        return text, text
-
-    except Exception as e:
-        logger.warning(f"[Synthesis] Synthesis failed, using template: {e}")
-        # Fallback: template-based explanation
-        active_pillars = [r for r in pillar_results if r.active]
-        top_concern = min(active_pillars, key=lambda r: r.score) if active_pillars else None
-        top_strength = max(active_pillars, key=lambda r: r.score) if active_pillars else None
-
-        en = f"Analysis based on {len(active_pillars)} active pillars. Score: {trust_score:.1f}/100."
-        bn = f"{len(active_pillars)}টি সক্রিয় স্তম্ভের উপর ভিত্তি করে বিশ্লেষণ। স্কোর: {trust_score:.1f}/১০০।"
-
-        if top_concern and top_concern.score < 50:
-            en += f" Main concern: {top_concern.name} scored {top_concern.score:.0f}/100."
-            bn += f" প্রধান উদ্বেগ: {top_concern.name_bn} স্কোর {top_concern.score:.0f}/১০০।"
-        if top_strength and top_strength.score >= 70:
-            en += f" Strength: {top_strength.name} scored {top_strength.score:.0f}/100."
-            bn += f" শক্তি: {top_strength.name_bn} স্কোর {top_strength.score:.0f}/১০০।"
-
-        return en, bn
-
-
-async def run_pillar_with_timeout(pillar, content: str, image_url: str | None) -> PillarScore:
-    """Run a single pillar with a timeout. Returns neutral score on timeout."""
-    try:
-        result = await asyncio.wait_for(
-            pillar.analyze(content, image_url),
-            timeout=PILLAR_TIMEOUT,
-        )
-        return result
-    except asyncio.TimeoutError:
-        logger.warning(f"[Scoring] Pillar '{pillar.name}' timed out after {PILLAR_TIMEOUT}s")
-        return PillarScore(
-            name=pillar.name,
-            name_bn=pillar.name_bn,
-            score=50.0,
-            weight=pillar.weight,
-            explanation_en=f"Analysis timed out after {PILLAR_TIMEOUT:.0f}s — neutral score assigned.",
-            explanation_bn=f"বিশ্লেষণ {PILLAR_TIMEOUT:.0f} সেকেন্ড পরে সময়সীমা অতিক্রম করেছে।",
-            evidence=["⏱️ Timed out"],
-            model_used=pillar.model_id,
-            active=False,
-        )
-    except Exception as e:
-        logger.error(f"[Scoring] Pillar '{pillar.name}' failed: {e}")
-        return PillarScore(
-            name=pillar.name,
-            name_bn=pillar.name_bn,
-            score=50.0,
-            weight=pillar.weight,
-            explanation_en=f"Analysis failed: {str(e)[:80]}",
-            explanation_bn="বিশ্লেষণে ত্রুটি হয়েছে।",
-            evidence=[],
-            model_used=pillar.model_id,
-            active=False,
-        )
+    # Find the outermost JSON object
+    json_match = re.search(r'\{[\s\S]*\}', text)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            # Try fixing common issues
+            raw = json_match.group()
+            # Remove trailing commas before } or ]
+            raw = re.sub(r',\s*([}\]])', r'\1', raw)
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+    return None
 
 
 async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeResponse:
     """
-    Run all 6 pillars in parallel and aggregate scores.
+    Run complete analysis with 2 API calls:
+    1. perplexity-reasoning: reads URL, extracts claims, verifies, scores all pillars
+    2. gemini-2.5-flash: generates bilingual summary
 
-    All pillars run concurrently with a 20s timeout each.
-    Total response target: ~15-20s.
-
-    Args:
-        content: Text content or URL to analyze
-        image_url: Optional image URL
-
-    Returns:
-        Complete AnalyzeResponse with all pillar scores
+    Total target: ~13 seconds.
     """
     start_time = time.time()
+    client = get_pollinations_client()
 
-    # Initialize all pillars
-    pillars = [
-        SourceReputationPillar(),
-        ContentConsistencyPillar(),
-        LanguageAnalysisPillar(),
-        BengaliContextPillar(),
-        ImageAuthenticityPillar(),
-        AuthorNetworkPillar(),
-    ]
+    # ─── Step 1: Single perplexity-reasoning call for ALL analysis ───
+    logger.info("[Scoring] Step 1: perplexity-reasoning analysis starting...")
 
-    # Run ALL pillars in parallel (no semaphore — speed is priority)
-    # Each pillar has its own 20s timeout
-    results: list[PillarScore] = await asyncio.gather(
-        *[run_pillar_with_timeout(pillar, content, image_url) for pillar in pillars]
-    )
+    prompt = ANALYSIS_PROMPT.format(content=content)
 
-    # Calculate weighted score
-    trust_score = sum(r.score * r.weight for r in results)
+    try:
+        raw_response = await client.chat(
+            model="perplexity-reasoning",
+            messages=[
+                {"role": "system", "content": "You are a fact-checking AI. Return ONLY valid JSON. No markdown, no explanation outside the JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            timeout=45.0,
+        )
+    except Exception as e:
+        logger.error(f"[Scoring] perplexity-reasoning call failed: {e}")
+        # Return a minimal error response
+        return _error_response(str(e), start_time)
+
+    step1_time = time.time() - start_time
+    logger.info(f"[Scoring] Step 1 complete in {step1_time:.1f}s, response length={len(raw_response)}")
+
+    # Parse the JSON response
+    analysis = _extract_json(raw_response)
+    if not analysis:
+        logger.error(f"[Scoring] Failed to parse JSON from perplexity response: {raw_response[:500]}")
+        return _error_response("Failed to parse AI response", start_time)
+
+    # ─── Extract pillar scores ───
+    pillar_scores_raw = analysis.get("pillar_scores", {})
+    pillar_results: list[PillarScore] = []
+
+    for pillar_key, weight in PILLAR_WEIGHTS.items():
+        pillar_data = pillar_scores_raw.get(pillar_key, {})
+        score = float(pillar_data.get("score", 50)) if isinstance(pillar_data, dict) else 50.0
+        reason = pillar_data.get("reason", "No analysis available") if isinstance(pillar_data, dict) else "No analysis available"
+
+        # Clamp score to 0-100
+        score = max(0.0, min(100.0, score))
+
+        pillar_results.append(PillarScore(
+            name=pillar_key.replace("_", " ").title(),
+            name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
+            score=score,
+            weight=weight,
+            explanation_en=reason,
+            explanation_bn=reason,  # Will be overridden by summary step if needed
+            evidence=_extract_evidence(analysis),
+            model_used="perplexity-reasoning",
+            active=True,
+        ))
+
+    # Calculate weighted trust score
+    trust_score = sum(p.score * p.weight for p in pillar_results)
+    trust_score = round(max(0.0, min(100.0, trust_score)), 1)
 
     # Get verdict
     verdict_en, verdict_bn = get_verdict(trust_score)
 
-    # Calculate confidence (based on how many pillars are active)
-    active_count = sum(1 for r in results if r.active)
-    confidence = active_count / len(results)
+    # Override verdict with AI's overall_verdict if it's more specific
+    ai_verdict = analysis.get("overall_verdict", "")
+    if ai_verdict:
+        verdict_en, verdict_bn = _map_ai_verdict(ai_verdict, trust_score)
 
-    # Synthesize explanation (with its own timeout)
-    explanation_en, explanation_bn = await synthesize_explanation(
-        results, trust_score, verdict_en, content
-    )
+    # ─── Step 2: gemini-2.5-flash summary (fast) ───
+    explanation_en = analysis.get("explanation_en", "")
+    explanation_bn = analysis.get("explanation_bn", "")
 
-    # Processing time
+    if not explanation_en or not explanation_bn:
+        try:
+            logger.info("[Scoring] Step 2: gemini summary...")
+            summary_response = await client.chat(
+                model="gemini-2.5-flash",
+                messages=[
+                    {"role": "system", "content": "Return only valid JSON. Be concise and factual."},
+                    {"role": "user", "content": SUMMARY_PROMPT.format(
+                        analysis_json=json.dumps(analysis, ensure_ascii=False)[:3000]
+                    )},
+                ],
+                temperature=0.3,
+                timeout=10.0,
+            )
+            summary = _extract_json(summary_response)
+            if summary:
+                explanation_en = summary.get("explanation_en", explanation_en)
+                explanation_bn = summary.get("explanation_bn", explanation_bn)
+        except Exception as e:
+            logger.warning(f"[Scoring] Summary generation failed (using perplexity output): {e}")
+
+    # Confidence based on claims verified
+    claims = analysis.get("claims", [])
+    verified_claims = [c for c in claims if c.get("verdict") in ("true", "false", "misleading")]
+    confidence = min(1.0, (len(verified_claims) + 1) / max(len(claims), 1))
+
     processing_time_ms = int((time.time() - start_time) * 1000)
+    logger.info(f"[Scoring] Complete in {processing_time_ms}ms. Score={trust_score}, Verdict={verdict_en}")
 
     return AnalyzeResponse(
-        trust_score=round(trust_score, 1),
+        trust_score=trust_score,
         verdict=verdict_en,
         verdict_bn=verdict_bn,
-        pillars=results,
-        explanation_en=explanation_en,
-        explanation_bn=explanation_bn,
+        pillars=pillar_results,
+        explanation_en=explanation_en or f"Trust score: {trust_score}/100. {verdict_en}.",
+        explanation_bn=explanation_bn or f"বিশ্বাসযোগ্যতা স্কোর: {trust_score}/১০০। {verdict_bn}।",
         confidence=round(confidence, 2),
+        cached=False,
+        processing_time_ms=processing_time_ms,
+    )
+
+
+def _extract_evidence(analysis: dict) -> list[str]:
+    """Extract evidence URLs/reasons from claims."""
+    evidence = []
+    for claim in analysis.get("claims", [])[:5]:
+        if isinstance(claim, dict):
+            ev = claim.get("evidence", "")
+            if ev:
+                evidence.append(f"[{claim.get('verdict', '?')}] {claim.get('claim', '')[:80]} — {ev[:100]}")
+    return evidence
+
+
+def _map_ai_verdict(ai_verdict: str, score: float) -> tuple[str, str]:
+    """Map AI's overall_verdict string to display verdicts."""
+    mapping = {
+        "true": ("True / Verified", "সত্য / যাচাইকৃত"),
+        "mostly_true": ("Mostly True", "অধিকাংশ সত্য"),
+        "misleading": ("Misleading / Mixed", "বিভ্রান্তিকর / মিশ্র"),
+        "mostly_false": ("Mostly False", "অধিকাংশ মিথ্যা"),
+        "false": ("False", "মিথ্যা"),
+        "unverifiable": ("Unverifiable", "যাচাইযোগ্য নয়"),
+    }
+    return mapping.get(ai_verdict.lower(), get_verdict(score))
+
+
+def _error_response(error_msg: str, start_time: float) -> AnalyzeResponse:
+    """Generate a minimal error response when analysis fails."""
+    processing_time_ms = int((time.time() - start_time) * 1000)
+
+    pillar_results = []
+    for pillar_key, weight in PILLAR_WEIGHTS.items():
+        pillar_results.append(PillarScore(
+            name=pillar_key.replace("_", " ").title(),
+            name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
+            score=50.0,
+            weight=weight,
+            explanation_en=f"Analysis failed: {error_msg[:100]}",
+            explanation_bn="বিশ্লেষণে ত্রুটি হয়েছে।",
+            evidence=[],
+            model_used="none",
+            active=False,
+        ))
+
+    return AnalyzeResponse(
+        trust_score=50.0,
+        verdict="Analysis Failed",
+        verdict_bn="বিশ্লেষণ ব্যর্থ",
+        pillars=pillar_results,
+        explanation_en=f"Analysis could not be completed: {error_msg[:200]}",
+        explanation_bn="বিশ্লেষণ সম্পন্ন করা যায়নি।",
+        confidence=0.0,
         cached=False,
         processing_time_ms=processing_time_ms,
     )
