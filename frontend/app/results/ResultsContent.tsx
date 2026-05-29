@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { TrustGauge } from "@/components/TrustGauge";
@@ -58,32 +59,38 @@ export function ResultsContent() {
   }
 
   return (
-    <div className="flex flex-col gap-12">
-      {/* Header */}
-      <header className="flex items-center justify-between pt-4">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-md bg-accent-blue flex items-center justify-center">
-            <span className="text-white text-body font-semibold">T</span>
+    <div className="flex flex-col gap-8 md:gap-10">
+      <header className="sticky top-0 z-20 -mx-6 md:-mx-10 lg:-mx-16 px-6 md:px-10 lg:px-16 py-4 backdrop-blur-md bg-surface-0/80 border-b border-surface-3/50">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-3 shrink-0">
+            <div className="h-10 w-10 rounded-2xl bg-accent-blue flex items-center justify-center shadow-lg shadow-accent-blue/20">
+              <span className="text-white text-body font-semibold">T</span>
+            </div>
+            <div className="flex flex-col">
+              <h1 className="text-section-header font-semibold heading-tight text-text-primary leading-none">
+                TrustLens
+              </h1>
+              <span className="text-caption text-text-tertiary caps-wide uppercase">{t.liveTrustCheck}</span>
+            </div>
+          </Link>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <LanguageToggle />
+            <Link
+              href="/"
+              className="ml-2 px-3 py-2 rounded-xl text-caption text-accent-blue bg-accent-blue/10 hover:bg-accent-blue/15 transition-colors duration-150"
+            >
+              ← {t.newAnalysis}
+            </Link>
           </div>
-          <h1 className="text-section-header font-semibold heading-tight text-text-primary">
-            TrustLens
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <LanguageToggle />
-          <a
-            href="/"
-            className="ml-2 text-caption text-accent-blue hover:underline transition-colors duration-150"
-          >
-            ← {t.newAnalysis}
-          </a>
         </div>
       </header>
 
       {/* Loading state */}
       {isAnalyzing && (
-        <ScanAnimation status={analysisStatus} />
+        <div className="section-surface p-5 md:p-6">
+          <ScanAnimation status={analysisStatus} />
+        </div>
       )}
 
       {/* Error state */}
@@ -171,13 +178,11 @@ export function ResultsContent() {
 
       {/* No result and not loading */}
       {!result && !isAnalyzing && !error && (
-        <div className="flex flex-col items-center gap-4 py-16">
-          <p className="text-body text-text-secondary">
-            {t.noResults}
-          </p>
-          <a href="/" className="text-body text-accent-blue hover:underline">
+        <div className="section-surface flex flex-col items-center gap-4 py-16 px-6 text-center">
+          <p className="text-body text-text-secondary">{t.noResults}</p>
+          <Link href="/" className="text-body text-accent-blue hover:underline">
             {t.startAnalysis}
-          </a>
+          </Link>
         </div>
       )}
     </div>
