@@ -43,14 +43,49 @@ export function InputForm() {
       setImageError(t.imageInvalidType);
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       setImageError(t.imageTooLarge);
       return;
     }
+
+    // Read → decode → downscale to ≤1600px long side → JPEG quality 0.82.
+    // Keeps the payload under Vercel's 4.5MB serverless body limit and
+    // is plenty of resolution for vision models to read the image.
     const reader = new FileReader();
     reader.onload = () => {
-      setImageDataUrl(typeof reader.result === "string" ? reader.result : "");
-      setImageFileName(file.name);
+      const original = typeof reader.result === "string" ? reader.result : "";
+      if (!original) {
+        setImageError(t.imageReadFailed);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1600;
+        const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          // Fallback: use original
+          setImageDataUrl(original);
+          setImageFileName(file.name);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          const compressed = canvas.toDataURL("image/jpeg", 0.82);
+          setImageDataUrl(compressed.length < original.length ? compressed : original);
+          setImageFileName(file.name);
+        } catch {
+          setImageDataUrl(original);
+          setImageFileName(file.name);
+        }
+      };
+      img.onerror = () => setImageError(t.imageReadFailed);
+      img.src = original;
     };
     reader.onerror = () => setImageError(t.imageReadFailed);
     reader.readAsDataURL(file);

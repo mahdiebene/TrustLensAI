@@ -40,12 +40,19 @@ class PollinationsClient:
     async def chat(
         self,
         model: str,
-        messages: list[dict[str, str]],
+        messages: list[dict],
         temperature: float = 0.3,
         timeout: float = 20.0,
         max_retries: int | None = None,
     ) -> str:
-        """Call chat completions using Pollinations OpenAI-compatible endpoint."""
+        """Call chat completions using Pollinations OpenAI-compatible endpoint.
+
+        `messages` may include OpenAI-style multimodal content blocks for vision models:
+        e.g. {"role": "user", "content": [
+            {"type": "text", "text": "..."},
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}
+        ]}
+        """
         retries = max_retries if max_retries is not None else self._max_retries
         for attempt in range(retries):
             try:

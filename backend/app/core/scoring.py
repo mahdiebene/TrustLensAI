@@ -179,55 +179,69 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
     start_time = time.time()
     client = get_pollinations_client()
 
-    # ─── Step 1: Single perplexity-reasoning call for ALL analysis ───
-    logger.info("[Scoring] Step 1: perplexity-reasoning analysis starting...")
+    # ─── Step 1: Analysis call ───
+    has_image = bool(image_url)
+    logger.info(f"[Scoring] Step 1: analysis starting (image={'yes' if has_image else 'no'})...")
 
     prompt = ANALYSIS_PROMPT.format(content=content)
+    system_msg = "You are a fact-checking AI. Return ONLY valid JSON. No markdown, no explanation outside the JSON."
 
-    # Cascade: perplexity-reasoning (web search) -> mistral (no content filter) -> openai-large
-    raw_response = ""
-    model_used = "perplexity-reasoning"
-    fallback_models = [
-        ("mistral", 25.0, "mistral-fallback"),
-        ("openai-large", 30.0, "openai-large-fallback"),
-    ]
-
-    try:
-        raw_response = await client.chat(
-            model="perplexity-reasoning",
-            messages=[
-                {"role": "system", "content": "You are a fact-checking AI. Return ONLY valid JSON. No markdown, no explanation outside the JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.1,
-            timeout=50.0,
-            max_retries=1,
-        )
-    except Exception as e:
-        logger.warning(f"[Scoring] perplexity-reasoning failed ({e}); trying fallbacks")
-        last_err: Exception | None = e
-        for fb_model, fb_timeout, fb_label in fallback_models:
-            try:
-                raw_response = await client.chat(
-                    model=fb_model,
-                    messages=[
-                        {"role": "system", "content": "You are a fact-checking AI. Use your training knowledge. Return ONLY valid JSON. No markdown, no explanation outside the JSON."},
-                        {"role": "user", "content": prompt},
+    def _build_messages(use_vision: bool) -> list[dict]:
+        """Build messages — multimodal when vision is needed."""
+        if use_vision and image_url:
+            return [
+                {"role": "system", "content": system_msg},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt + "\n\nAn image is attached. Examine it carefully — describe what you see, look for manipulation cues (deepfake artifacts, inconsistent lighting, edited text overlays), and incorporate findings into image_authenticity (and content_consistency if claims relate to the image). If the image contains text, extract and analyze that text too."},
+                        {"type": "image_url", "image_url": {"url": image_url}},
                     ],
-                    temperature=0.2,
-                    timeout=fb_timeout,
-                    max_retries=1,
-                )
-                model_used = fb_label
-                last_err = None
-                break
-            except Exception as fb_e:
-                logger.warning(f"[Scoring] Fallback {fb_model} failed ({fb_e}); trying next")
-                last_err = fb_e
-                continue
-        if last_err is not None:
-            logger.error(f"[Scoring] All fallbacks failed: {last_err}")
-            return _error_response(f"All models failed: {last_err}", start_time)
+                },
+            ]
+        return [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": prompt},
+        ]
+
+    raw_response = ""
+    if has_image:
+        # Vision path: perplexity-reasoning has no vision → use openai-large first
+        model_used = "openai-large-vision"
+        cascade = [
+            ("openai-large", 50.0, "openai-large-vision", True),
+            ("openai", 40.0, "openai-vision", True),
+            ("mistral", 30.0, "mistral-fallback", False),
+        ]
+    else:
+        # Text path: perplexity-reasoning (web search) → mistral → openai-large
+        model_used = "perplexity-reasoning"
+        cascade = [
+            ("perplexity-reasoning", 50.0, "perplexity-reasoning", False),
+            ("mistral", 25.0, "mistral-fallback", False),
+            ("openai-large", 30.0, "openai-large-fallback", False),
+        ]
+
+    last_err: Exception | None = None
+    for fb_model, fb_timeout, fb_label, use_vision in cascade:
+        try:
+            raw_response = await client.chat(
+                model=fb_model,
+                messages=_build_messages(use_vision),
+                temperature=0.1 if fb_label.startswith("perplexity") else 0.2,
+                timeout=fb_timeout,
+                max_retries=1,
+            )
+            model_used = fb_label
+            last_err = None
+            break
+        except Exception as fb_e:
+            logger.warning(f"[Scoring] {fb_model} failed ({fb_e}); trying next")
+            last_err = fb_e
+            continue
+    if last_err is not None:
+        logger.error(f"[Scoring] All models failed: {last_err}")
+        return _error_response(f"All models failed: {last_err}", start_time)
 
     step1_time = time.time() - start_time
     logger.info(f"[Scoring] Step 1 complete in {step1_time:.1f}s, response length={len(raw_response)}")
