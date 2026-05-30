@@ -184,6 +184,8 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
 
     prompt = ANALYSIS_PROMPT.format(content=content)
 
+    raw_response = ""
+    model_used = "perplexity-reasoning"
     try:
         raw_response = await client.chat(
             model="perplexity-reasoning",
@@ -192,12 +194,27 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            timeout=45.0,
+            timeout=35.0,
+            max_retries=1,
         )
     except Exception as e:
-        logger.error(f"[Scoring] perplexity-reasoning call failed: {e}")
-        # Return a minimal error response
-        return _error_response(str(e), start_time)
+        logger.warning(f"[Scoring] perplexity-reasoning failed ({e}); falling back to openai-large")
+        # Fallback to a faster model — no live web search, but still scores from extracted content
+        try:
+            raw_response = await client.chat(
+                model="openai-large",
+                messages=[
+                    {"role": "system", "content": "You are a fact-checking AI. Use your training knowledge. Return ONLY valid JSON. No markdown, no explanation outside the JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                timeout=18.0,
+                max_retries=1,
+            )
+            model_used = "openai-large-fallback"
+        except Exception as e2:
+            logger.error(f"[Scoring] Fallback openai-large also failed: {e2}")
+            return _error_response(f"Both models failed: {e2}", start_time)
 
     step1_time = time.time() - start_time
     logger.info(f"[Scoring] Step 1 complete in {step1_time:.1f}s, response length={len(raw_response)}")
@@ -228,7 +245,7 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
             explanation_en=reason,
             explanation_bn=reason,  # Will be overridden by summary step if needed
             evidence=_extract_evidence(analysis),
-            model_used="perplexity-reasoning",
+            model_used=model_used,
             active=True,
         ))
 

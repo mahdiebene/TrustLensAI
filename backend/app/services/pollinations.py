@@ -37,9 +37,11 @@ class PollinationsClient:
         messages: list[dict[str, str]],
         temperature: float = 0.3,
         timeout: float = 20.0,
+        max_retries: int | None = None,
     ) -> str:
         """Call chat completions using Pollinations OpenAI-compatible endpoint."""
-        for attempt in range(self._max_retries):
+        retries = max_retries if max_retries is not None else self._max_retries
+        for attempt in range(retries):
             try:
                 payload = {
                     "model": model,
@@ -72,7 +74,7 @@ class PollinationsClient:
                 elif response.status_code == 429:
                     delay = self._base_delay * (2 ** attempt)
                     logger.warning(f"[Pollinations] Rate limited for {model}, waiting {delay}s (attempt {attempt + 1})")
-                    if attempt < self._max_retries - 1:
+                    if attempt < retries - 1:
                         await asyncio.sleep(delay)
                         continue
                     else:
@@ -89,18 +91,18 @@ class PollinationsClient:
             except httpx.TimeoutException as e:
                 delay = self._base_delay * (2 ** attempt)
                 logger.warning(f"[Pollinations] Timeout for {model}: {e} (attempt {attempt + 1})")
-                if attempt < self._max_retries - 1:
+                if attempt < retries - 1:
                     await asyncio.sleep(delay)
                 else:
-                    raise Exception(f"Timeout after {self._max_retries} attempts for {model}")
+                    raise Exception(f"Timeout after {retries} attempts for {model}")
 
             except Exception as e:
                 if "429" in str(e) or "Rate" in str(e):
                     delay = self._base_delay * (2 ** attempt)
                 else:
                     delay = self._base_delay
-                logger.warning(f"[Pollinations] Retry {attempt + 1}/{self._max_retries} for {model}: {e}")
-                if attempt < self._max_retries - 1:
+                logger.warning(f"[Pollinations] Retry {attempt + 1}/{retries} for {model}: {e}")
+                if attempt < retries - 1:
                     await asyncio.sleep(delay)
                 else:
                     logger.error(f"[Pollinations] All retries failed for {model}: {e}")
