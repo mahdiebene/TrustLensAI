@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { InputForm } from "@/components/InputForm";
@@ -7,6 +8,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useStore } from "@/lib/store";
 import { useI18n } from "@/lib/useI18n";
+import { loadRecentScans, type RecentScanItem } from "@/lib/recentScans";
 
 const howItWorks = [
   { titleKey: "pasteContent", descKey: "pasteContentDesc", badge: "01" },
@@ -24,15 +26,18 @@ const pillars = [
   { titleKey: "authorAnalysis", descKey: "authorNetworkDesc" },
 ];
 
-const recentScans = [
-  { source: "Facebook", titleBn: "পাঁচ জেলায় কারফিউ চলছে", titleEn: "Curfew is active in five districts", verdict: "True", verdictKey: "recentTrue" },
-  { source: "Image", titleBn: "গরমে বরফ পড়েছে এমন ছবি ভাইরাল", titleEn: "Viral image says ice fell in heatwave", verdict: "False", verdictKey: "recentFalse" },
-  { source: "Article", titleBn: "ঢাকায় ১০০% বন্যা সতর্কতা", titleEn: "A 100% flood alert for Dhaka", verdict: "False", verdictKey: "recentFalse" },
-];
-
 export default function HomePage() {
   const t = useI18n();
   const { language } = useStore();
+  const [recentScans, setRecentScans] = useState<RecentScanItem[]>([]);
+
+  useEffect(() => {
+    const refresh = () => setRecentScans(loadRecentScans());
+
+    refresh();
+    window.addEventListener("storage", refresh);
+    return () => window.removeEventListener("storage", refresh);
+  }, []);
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)] gap-8 md:gap-10">
@@ -147,9 +152,9 @@ export default function HomePage() {
           <p className="text-body text-text-secondary">{t.downloadDesc}</p>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          <DownloadCard icon="bot" title="Telegram Bot" copy={t.botCopy} action={t.downloadNow} />
-          <DownloadCard icon="extension" title="Chrome Extension" copy={t.extensionCopy} action={t.addToChrome} />
-          <DownloadCard icon="dashboard" title="Web App Dashboard" copy={t.dashboardCopy} action={t.openDashboard} />
+          <DownloadCard icon="bot" title="Telegram Bot" copy={t.botCopy} action={t.openBot} href={BOT_SOURCE_URL} external />
+          <DownloadCard icon="extension" title="Chrome Extension" copy={t.extensionCopy} action={t.openExtension} href={EXTENSION_SOURCE_URL} external />
+          <DownloadCard icon="dashboard" title="Web App Dashboard" copy={t.dashboardCopy} action={t.openDashboard} href="/results" />
         </div>
       </section>
 
@@ -162,20 +167,27 @@ export default function HomePage() {
           <span className="text-caption text-text-tertiary">{t.liveTrustCheck}</span>
         </div>
         <div className="grid gap-3">
-          {recentScans.map((item, index) => (
-            <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-surface-3/60 bg-surface-1 px-4 py-3">
+          {recentScans.length > 0 ? recentScans.map((item) => (
+            <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-surface-3/60 bg-surface-1 px-4 py-3">
               <div className="flex items-center gap-3 min-w-0">
-                <span className="px-2.5 py-1 rounded-full bg-surface-2 text-caption text-text-secondary shrink-0">{item.source}</span>
+                <span className="px-2.5 py-1 rounded-full bg-surface-2 text-caption text-text-secondary shrink-0">
+                  {item.source === "link" ? t.recentSourceLink : t.recentSourceText}
+                </span>
                 <div className="min-w-0">
-                  <p className="text-body text-text-primary truncate">{language === "bn" ? item.titleBn : item.titleEn}</p>
+                  <p className="text-body text-text-primary truncate">{item.excerpt}</p>
                   <p className="text-caption text-text-tertiary">{t.reportSection}</p>
                 </div>
               </div>
-              <div className={`px-3 py-1 rounded-full text-caption font-medium w-fit ${item.verdict === "True" ? "bg-trust-high/10 text-trust-high" : "bg-trust-low/10 text-trust-low"}`}>
-                {t[item.verdictKey as keyof typeof t] as string}
+              <div className={`px-3 py-1 rounded-full text-caption font-medium w-fit ${item.verdictEn === "True" ? "bg-trust-high/10 text-trust-high" : "bg-trust-low/10 text-trust-low"}`}>
+                {language === "bn" ? item.verdictBn : item.verdictEn}
               </div>
             </div>
-          ))}
+          )) : (
+            <div className="rounded-2xl border border-dashed border-surface-3/70 bg-surface-1 px-4 py-6 text-center text-text-secondary">
+              <p className="text-body">{t.recentScansEmpty}</p>
+              <p className="text-caption mt-1">{t.recentScansEmptyHint}</p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -233,7 +245,7 @@ function PillarMiniCard({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-function DownloadCard({ icon, title, copy, action }: { icon: string; title: string; copy: string; action: string }) {
+function DownloadCard({ icon, title, copy, action, href, external = false }: { icon: string; title: string; copy: string; action: string; href: string; external?: boolean }) {
   const glyphs = {
     bot: "✦",
     extension: "⌘",
@@ -247,9 +259,17 @@ function DownloadCard({ icon, title, copy, action }: { icon: string; title: stri
         <h4 className="text-body font-medium text-text-primary">{title}</h4>
       </div>
       <p className="text-caption text-text-secondary leading-relaxed">{copy}</p>
-      <button className="mt-auto self-start px-4 py-2 rounded-xl bg-accent-blue text-white text-caption font-medium hover:bg-accent-blue/90 transition-colors">
+      <a
+        className="mt-auto self-start px-4 py-2 rounded-xl bg-accent-blue text-white text-caption font-medium hover:bg-accent-blue/90 transition-colors"
+        href={href}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noreferrer noopener" : undefined}
+      >
         {action}
-      </button>
+      </a>
     </div>
   );
 }
+
+const BOT_SOURCE_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || "https://github.com/mahdiebene/TrustLensAI/tree/main/bot";
+const EXTENSION_SOURCE_URL = process.env.NEXT_PUBLIC_CHROME_EXTENSION_URL || "https://github.com/mahdiebene/TrustLensAI/tree/main/extension";

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { useStore } from "@/lib/store";
 import { useI18n } from "@/lib/useI18n";
 import { analyzeContent } from "@/lib/api";
+import { saveRecentScan } from "@/lib/recentScans";
 
 export function InputForm() {
   const router = useRouter();
@@ -76,6 +77,7 @@ export function InputForm() {
     try {
       const data = await analyzeContent({ content: content.trim() });
       setResult(data);
+      saveRecentScan(content.trim(), data);
       clearInterval(statusInterval);
       setIsAnalyzing(false);
       router.push("/results");

@@ -13,6 +13,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useStore } from "@/lib/store";
 import { useI18n } from "@/lib/useI18n";
 import { analyzeContent } from "@/lib/api";
+import { saveRecentScan } from "@/lib/recentScans";
 
 export function ResultsContent() {
   const t = useI18n();
@@ -49,6 +50,7 @@ export function ResultsContent() {
     try {
       const data = await analyzeContent({ content });
       setResult(data);
+      saveRecentScan(content, data);
     } catch (e: any) {
       setError(e.message || "Analysis failed");
     } finally {
