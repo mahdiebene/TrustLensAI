@@ -281,17 +281,71 @@ async def _scrape_via_jina(url: str) -> dict:
         # within first 300 chars) and short overall → fail.
         is_error_page = bool(matched_signal) and len(cleaned) < 1500
 
+        # 6. Detect Meta login-wall / interface page. When Facebook redirects a
+        #    share link (e.g. /share/p/XXX) to the login screen, Jina extracts
+        #    the *interface chrome*: a long footer listing Meta products, language
+        #    options, legal links — none of which is the actual post. The text
+        #    can be 2000+ chars so the length check above won't catch it.
+        #
+        #    Fingerprint: high density of Meta product names + UI labels + ~zero
+        #    narrative content. We count distinct "interface tokens"; if many
+        #    appear in the body, it's the login wall, not a real post.
+        interface_tokens = [
+            "messenger", "facebook lite", "meta pay", "meta quest",
+            "ray-ban meta", "instagram", "threads", "meta verified",
+            "create page", "create ad", "create group",
+            "log in", "sign up", "create new account",
+            "forgot password", "forgotten password",
+            "facebook © meta", "© meta",
+            "english (us)", "english (uk)",
+            "privacy policy", "cookies policy", "terms of service",
+            "ad choices", "ad preferences",
+        ]
+        token_hits = sum(1 for tok in interface_tokens if tok in body_lower)
+        # Bengali login-wall variant
+        bn_login_tokens = [
+            "লগ ইন", "লগইন", "নতুন একাউন্ট", "নতুন অ্যাকাউন্ট",
+            "পাসওয়ার্ড ভুলে", "মেসেঞ্জার", "ইনস্টাগ্রাম",
+        ]
+        bn_token_hits = sum(1 for tok in bn_login_tokens if tok in cleaned)
+        # If 5+ distinct Meta interface tokens appear (or 3+ Bengali login
+        # tokens) and the body has no real sentence-like narrative content
+        # (very few periods/Bengali full-stops relative to length), it's the
+        # login wall.
+        sentence_breaks = cleaned.count(". ") + cleaned.count("। ") + cleaned.count(".\n") + cleaned.count("।\n")
+        chars_per_sentence = len(cleaned) / max(sentence_breaks, 1)
+        is_login_wall = (
+            (token_hits >= 5 or bn_token_hits >= 3)
+            and chars_per_sentence > 200  # mostly link/list lines, no prose
+        )
+
+        if is_login_wall:
+            is_error_page = True
+            matched_signal = f"login-wall (tokens={token_hits}, bn={bn_token_hits})"
+            out["failure_reason"] = (
+                "Facebook redirected this share link to its login page, so the "
+                "actual post content is not accessible. Paste the post text or "
+                "upload a screenshot to get a real trust score."
+            )
+            out["failure_reason_bn"] = (
+                "ফেসবুক এই শেয়ার লিংকটিকে লগইন পেজে রিডাইরেক্ট করেছে, তাই পোস্টের "
+                "আসল কনটেন্ট পাওয়া যায়নি। সঠিক ট্রাস্ট স্কোর পেতে পোস্টের লেখা "
+                "পেস্ট করুন অথবা স্ক্রিনশট আপলোড করুন।"
+            )
+
         if is_error_page:
             out["success"] = False
             out["text"] = ""  # don't pass error page to AI
-            out["failure_reason"] = (
-                "Facebook returned a 'content unavailable' page — this post is "
-                "private, deleted, or restricted to logged-in users."
-            )
-            out["failure_reason_bn"] = (
-                "ফেসবুক 'কনটেন্ট উপলব্ধ নয়' পেজ ফেরত দিয়েছে — এই পোস্ট প্রাইভেট, "
-                "ডিলিট হয়েছে, অথবা লগইন ছাড়া দেখা যায় না।"
-            )
+            if not out.get("failure_reason"):
+                out["failure_reason"] = (
+                    "Facebook returned a 'content unavailable' page — this post is "
+                    "private, deleted, or restricted to logged-in users."
+                )
+            if not out.get("failure_reason_bn"):
+                out["failure_reason_bn"] = (
+                    "ফেসবুক 'কনটেন্ট উপলব্ধ নয়' পেজ ফেরত দিয়েছে — এই পোস্ট প্রাইভেট, "
+                    "ডিলিট হয়েছে, অথবা লগইন ছাড়া দেখা যায় না।"
+                )
             logger.warning(
                 f"[Scraper] Jina returned FB error page for {url[:60]}... "
                 f"(matched: {matched_signal}, len={len(cleaned)})"
