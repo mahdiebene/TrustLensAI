@@ -13,7 +13,7 @@ from slowapi.util import get_remote_address
 from app.models.schemas import AnalyzeRequest, AnalyzeResponse
 from app.core.scoring import run_analysis
 from app.services.redis_client import get_cache_service
-from app.services.scraper import is_url, is_social_media_url, scrape_generic_url
+from app.services.scraper import is_url, is_facebook_url, scrape_url
 
 logger = logging.getLogger(__name__)
 
@@ -50,44 +50,45 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
     if is_url(content):
         logger.info(f"[Analyze] URL detected: {content}")
 
-        if is_social_media_url(content):
-            # Social media URLs: pass directly to perplexity-reasoning
-            # Instruct it to use web search to find the post content
-            analysis_content = (
-                f"URL: {content}\n\n"
-                f"Instructions: This is a social media post URL. Do the following:\n"
-                f"1. Try to access and read the URL directly\n"
-                f"2. If direct access fails, SEARCH THE WEB for this exact URL or its content\n"
-                f"3. Look for cached versions, shares, screenshots, or discussions of this post\n"
-                f"4. Check fact-checking sites that may have reviewed this content\n"
-                f"5. If you find the content through any method, analyze it for trustworthiness\n"
-                f"6. If you truly cannot find the content anywhere, mark as unverifiable\n\n"
-                f"IMPORTANT: Facebook posts are often shared/discussed on other platforms. "
-                f"Search for the post content even if the direct URL is not accessible."
+        # Scrape the URL first (Facebook gets special OG-tag extraction)
+        scraped = await scrape_url(content)
+
+        if scraped["success"] and scraped["text"]:
+            # We have extracted text — pass it to the AI for fact-checking
+            analysis_content = f"URL: {content}\n"
+            if scraped.get("source_domain"):
+                analysis_content += f"Source: {scraped['source_domain']}\n"
+            if scraped.get("author"):
+                analysis_content += f"Author: {scraped['author']}\n"
+            if scraped.get("title"):
+                analysis_content += f"Title: {scraped['title']}\n"
+            analysis_content += f"\nExtracted Content:\n{scraped['text']}"
+            logger.info(
+                f"[Analyze] Scraped {len(scraped['text'])} chars from "
+                f"{'Facebook' if is_facebook_url(content) else 'generic URL'}, passing to analysis"
             )
-            logger.info("[Analyze] Social media URL — passing directly to perplexity-reasoning")
         else:
-            # Non-social URLs: try quick scrape, but also pass URL to AI
-            scraped = await scrape_generic_url(content)
-            if scraped["success"] and scraped["text"]:
+            # Scrape failed — for Facebook this means private/group post
+            # Fall back to perplexity-reasoning with web search instructions
+            if is_facebook_url(content):
                 analysis_content = (
-                    f"URL: {content}\n"
-                    f"Source: {scraped.get('source_domain', 'unknown')}\n"
+                    f"URL: {content}\n\n"
+                    f"Instructions: This is a Facebook post URL. The server could not extract "
+                    f"the post text (likely a private or group post). Do the following:\n"
+                    f"1. SEARCH THE WEB for this exact URL or its content\n"
+                    f"2. Look for cached versions, shares on other platforms, or discussions\n"
+                    f"3. Check fact-checking sites that may have reviewed this content\n"
+                    f"4. If you find the content, analyze it for trustworthiness\n"
+                    f"5. If you truly cannot find it anywhere, mark as unverifiable"
                 )
-                if scraped.get("author"):
-                    analysis_content += f"Author: {scraped['author']}\n"
-                if scraped.get("title"):
-                    analysis_content += f"Title: {scraped['title']}\n"
-                analysis_content += f"\nContent:\n{scraped['text']}"
-                logger.info(f"[Analyze] Scraped {len(scraped['text'])} chars, passing to analysis")
+                logger.info("[Analyze] Facebook scrape failed (private/group) — falling back to web search")
             else:
-                # Scrape failed — let perplexity-reasoning read it directly
                 analysis_content = (
                     f"URL: {content}\n"
                     f"Instructions: Read this URL using your web browsing capabilities. "
                     f"Extract the content, then analyze for trustworthiness."
                 )
-                logger.info("[Analyze] Scrape failed — passing URL directly to perplexity-reasoning")
+                logger.info("[Analyze] Generic scrape failed — passing URL to perplexity-reasoning")
     else:
         # Plain text content
         analysis_content = content
