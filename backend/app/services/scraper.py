@@ -1,10 +1,16 @@
-"""Web scraping utilities — Facebook-aware with Open Graph extraction.
+"""Web scraping utilities — Facebook-aware with Jina Reader + OG fallback.
 
-For Facebook URLs, we extract Open Graph meta tags which public pages expose
-with the actual post description/title. Share links are resolved to their
-real permalink via redirect following. The extracted text is then passed to
-the AI for fact-checking, rather than relying on the AI's browser which hits
-Facebook's login wall.
+For Facebook URLs we use a multi-stage strategy:
+  1. Jina Reader (https://r.jina.ai/<url>) — primary path. Returns clean
+     LLM-ready markdown with full post text, author, image alt-text,
+     reactions, comments. Works from datacenter IPs (where Facebook serves
+     a 400 error page to direct requests).
+  2. Open Graph meta tags via direct fetch — fallback if Jina is unreachable.
+     Works for residential IPs but NOT VPS/datacenter IPs.
+
+Share links (/share/p/...) are resolved to their canonical permalink first.
+The extracted text is then passed to the AI for fact-checking, rather than
+relying on the AI's browser which hits Facebook's login wall.
 """
 
 import re
@@ -167,10 +173,106 @@ async def _resolve_facebook_url(url: str) -> str:
     return url
 
 
-async def scrape_facebook_url(url: str) -> dict:
-    """Scrape a Facebook URL by extracting Open Graph meta tags.
+async def _scrape_via_jina(url: str) -> dict:
+    """Scrape a URL via Jina Reader (https://r.jina.ai/).
 
-    Public Facebook page posts expose og:description with the actual post text.
+    Jina Reader is a free LLM-friendly web scraper that returns clean
+    markdown. It works from datacenter IPs where direct Facebook fetches
+    are blocked (returns 400 error page).
+
+    Returns dict with: text, title, author, image_url, success
+    """
+    out = {"text": "", "title": "", "author": "", "image_url": None, "success": False}
+    jina_url = f"https://r.jina.ai/{url}"
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            # Plain text/markdown response
+            jina_headers = {
+                "User-Agent": "TrustLens/1.0",
+                "Accept": "text/plain, text/markdown, */*",
+                # Optional: 'X-Return-Format: markdown' is default; we keep it implicit
+            }
+            r = await client.get(jina_url, headers=jina_headers)
+            if r.status_code != 200 or not r.text:
+                logger.warning(f"[Scraper] Jina HTTP {r.status_code} for {url[:60]}...")
+                return out
+            md = r.text
+
+        # Parse the Jina markdown header block (Title:, URL Source:, Markdown Content:)
+        title_m = re.search(r"^Title:\s*(.+)$", md, re.MULTILINE)
+        if title_m:
+            out["title"] = title_m.group(1).strip()
+
+        # Find the body after "Markdown Content:"
+        body_split = re.split(r"^Markdown Content:\s*$", md, maxsplit=1, flags=re.MULTILINE)
+        body = body_split[1] if len(body_split) > 1 else md
+
+        # Strip Jina's leading H1 (often "PageName - post snippet | Facebook")
+        body = re.sub(r"^\s*#\s+.*$", "", body, count=1, flags=re.MULTILINE)
+
+        # Extract author from "## <Name>'s Post" pattern (Facebook-specific)
+        author_m = re.search(r"##\s+([^\n]+?)'s Post", body)
+        if author_m:
+            out["author"] = author_m.group(1).strip()
+        else:
+            # Fallback: bold name link near top
+            bold_m = re.search(r"###\s*\[\*\*([^*\]]+)\*\*\]", body)
+            if bold_m:
+                out["author"] = bold_m.group(1).strip()
+
+        # Find first image URL (the post's main image)
+        img_m = re.search(r"!\[[^\]]*\]\((https?://[^)\s]+)\)", body)
+        if img_m:
+            out["image_url"] = img_m.group(1)
+
+        # Clean the text:
+        # 1. Remove markdown image syntax but KEEP alt text (often contains OCR'd image text)
+        cleaned = re.sub(
+            r"!\[([^\]]*)\]\([^)]+\)",
+            lambda m: f"[Image: {m.group(1)}]" if m.group(1).strip() else "",
+            body,
+        )
+        # 2. Convert links [text](url) to just text
+        cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
+        # 3. Drop common Facebook chrome/boilerplate lines
+        boilerplate_patterns = [
+            r"^Log In\s*$",
+            r"^Forgot Account\?\s*$",
+            r"^All reactions:\s*$",
+            r"^Most relevant\s*$",
+            r"^Like\s*$",
+            r"^Comment\s*$",
+            r"^Share\s*$",
+            r"^See more\s*$",
+            r"^View \d+ repl(y|ies)\s*$",
+            r"^View all \d+ replies\s*$",
+            r"^\*\s*\*\s*\*$",  # markdown rule
+        ]
+        for pat in boilerplate_patterns:
+            cleaned = re.sub(pat, "", cleaned, flags=re.MULTILINE | re.IGNORECASE)
+        # 4. Collapse whitespace
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+        out["text"] = cleaned[:8000]
+        out["success"] = bool(cleaned and len(cleaned) > 20)
+        if out["success"]:
+            logger.info(
+                f"[Scraper] Jina extracted {len(cleaned)} chars, "
+                f"author='{out['author']}', title='{out['title'][:50]}'"
+            )
+    except Exception as e:
+        logger.warning(f"[Scraper] Jina request failed for {url[:60]}...: {e}")
+
+    return out
+
+
+async def scrape_facebook_url(url: str) -> dict:
+    """Scrape a Facebook URL.
+
+    Strategy:
+      1. Try Jina Reader first (works from VPS/datacenter IPs).
+      2. Fall back to direct OG-tag scrape (only works from residential IPs).
+
     Share links are resolved to their real permalink first.
 
     Returns dict with keys: text, title, author, source_domain, success, image_url, original_url
@@ -185,33 +287,42 @@ async def scrape_facebook_url(url: str) -> dict:
         "original_url": url,
     }
 
-    # Step 1: Resolve share links to real permalink
+    # Step 1: Resolve share links to real permalink (cheap HEAD request)
     resolved_url = await _resolve_facebook_url(url)
     result["original_url"] = resolved_url
 
-    # Step 2: Try desktop headers first
+    # Step 2: PRIMARY — Jina Reader
+    jina_result = await _scrape_via_jina(resolved_url)
+    if jina_result["success"]:
+        result["text"] = jina_result["text"]
+        result["title"] = jina_result["title"]
+        result["author"] = jina_result["author"]
+        result["image_url"] = jina_result["image_url"]
+        result["success"] = True
+        return result
+
+    # Step 3: FALLBACK — direct fetch + OG tags (works on residential IPs)
     html_text = ""
     try:
-        async with httpx.AsyncClient(
-            timeout=12.0, follow_redirects=True
-        ) as client:
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
             r = await client.get(resolved_url, headers=HEADERS)
-            if r.status_code == 200:
+            if r.status_code == 200 and len(r.text) > 2000:
                 html_text = r.text
             else:
-                logger.warning(f"[Scraper] FB desktop HTTP {r.status_code}")
+                logger.warning(
+                    f"[Scraper] FB desktop HTTP {r.status_code} len={len(r.text)}"
+                )
     except Exception as e:
         logger.warning(f"[Scraper] FB desktop request failed: {e}")
 
-    # Step 3: If desktop failed, try mobile headers
     if not html_text:
         try:
-            mobile_url = resolved_url.replace("web.facebook.com", "m.facebook.com").replace("www.facebook.com", "m.facebook.com")
-            async with httpx.AsyncClient(
-                timeout=12.0, follow_redirects=True
-            ) as client:
+            mobile_url = resolved_url.replace("web.facebook.com", "m.facebook.com").replace(
+                "www.facebook.com", "m.facebook.com"
+            )
+            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
                 r = await client.get(mobile_url, headers=MOBILE_HEADERS)
-                if r.status_code == 200:
+                if r.status_code == 200 and len(r.text) > 2000:
                     html_text = r.text
                 else:
                     logger.warning(f"[Scraper] FB mobile HTTP {r.status_code}")
@@ -219,32 +330,25 @@ async def scrape_facebook_url(url: str) -> dict:
             logger.warning(f"[Scraper] FB mobile request failed: {e}")
 
     if not html_text:
-        logger.error(f"[Scraper] Could not fetch any HTML from {resolved_url[:80]}...")
+        logger.error(f"[Scraper] All FB strategies failed for {resolved_url[:80]}...")
         return result
 
-    # Step 4: Parse OG tags
     soup = BeautifulSoup(html_text, "html.parser")
     og_tags = _extract_og_tags(soup)
 
-    # Extract title
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else ""
-
-    # Build text from OG tags
     text = _build_text_from_og(og_tags, title)
 
-    # Extract author from og:title or page name patterns
     author = ""
     if og_tags.get("og:title"):
-        # For page posts, og:title is often "Page Name - Post snippet"
         author_part = og_tags["og:title"].split(" - ")[0].split(" | ")[0].strip()
         if author_part and author_part != "Facebook":
             author = author_part
 
-    # Extract image
     image_url = og_tags.get("og:image") or og_tags.get("twitter:image")
 
-    result["text"] = text[:8000]  # Cap at 8000 chars
+    result["text"] = text[:8000]
     result["title"] = title
     result["author"] = author
     result["image_url"] = image_url
@@ -252,8 +356,7 @@ async def scrape_facebook_url(url: str) -> dict:
 
     if result["success"]:
         logger.info(
-            f"[Scraper] FB extracted {len(text)} chars, author='{author}', "
-            f"image={bool(image_url)} from {resolved_url[:60]}..."
+            f"[Scraper] FB OG-fallback extracted {len(text)} chars, author='{author}'"
         )
     else:
         logger.warning(
