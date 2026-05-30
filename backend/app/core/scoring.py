@@ -194,7 +194,7 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            timeout=35.0,
+            timeout=50.0,
             max_retries=1,
         )
     except Exception as e:
@@ -208,7 +208,7 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
-                timeout=18.0,
+                timeout=30.0,
                 max_retries=1,
             )
             model_used = "openai-large-fallback"

@@ -1,0 +1,11 @@
+/usr/local/lib/python3.12/site-packages/pydantic/_internal/_fields.py:132: UserWarning: Field "model_used" in PillarScore has conflict with protected namespace "model_".
+
+You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+  warnings.warn(
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+[TrustLens] Starting in production mode
+[TrustLens] Pollinations API: https://gen.pollinations.ai
+INFO:     37.111.222.28:36383 - "POST /api/analyze HTTP/1.1" 200 OK

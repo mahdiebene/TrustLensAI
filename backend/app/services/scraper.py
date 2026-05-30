@@ -297,7 +297,7 @@ async def _scrape_via_jina(url: str) -> dict:
                 f"(matched: {matched_signal}, len={len(cleaned)})"
             )
         else:
-            out["text"] = cleaned[:8000]
+            out["text"] = cleaned[:3500]
             out["success"] = bool(cleaned and len(cleaned) > 20)
             if out["success"]:
                 logger.info(
