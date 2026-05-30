@@ -37,6 +37,13 @@ class AnalyzeResponse(BaseModel):
     cached: bool = Field(False, description="Whether result was served from cache")
     processing_time_ms: int = Field(..., description="Total processing time in milliseconds")
 
+    # Scrape-failure signaling (when a URL could not be retrieved)
+    scrape_failed: bool = Field(False, description="True when the URL could not be scraped — frontend should prompt user for text/image")
+    scrape_reason_en: str = Field("", description="Human-readable failure reason (English)")
+    scrape_reason_bn: str = Field("", description="Human-readable failure reason (Bengali)")
+    needs_user_input: bool = Field(False, description="True if the frontend should ask the user to paste the post content or upload a screenshot")
+    original_url: str = Field("", description="The URL the user submitted (echoed back when scrape_failed)")
+
 
 class HealthResponse(BaseModel):
     """Response body for the /api/health endpoint."""

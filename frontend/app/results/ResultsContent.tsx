@@ -10,6 +10,7 @@ import { RadarChart } from "@/components/RadarChart";
 import { ScanAnimation } from "@/components/ScanAnimation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
+import { ScrapeFailedCard } from "@/components/ScrapeFailedCard";
 import { useStore } from "@/lib/store";
 import { useI18n } from "@/lib/useI18n";
 import { analyzeContent } from "@/lib/api";
@@ -106,8 +107,17 @@ export function ResultsContent() {
         </motion.div>
       )}
 
+      {/* Scrape-failure state — show a card asking for text/image */}
+      {result && !isAnalyzing && result.scrape_failed && (
+        <ScrapeFailedCard
+          reasonEn={result.scrape_reason_en || result.explanation_en}
+          reasonBn={result.scrape_reason_bn || result.explanation_bn}
+          originalUrl={result.original_url || ""}
+        />
+      )}
+
       {/* Results */}
-      {result && !isAnalyzing && (
+      {result && !isAnalyzing && !result.scrape_failed && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

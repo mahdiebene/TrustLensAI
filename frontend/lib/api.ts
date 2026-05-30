@@ -30,6 +30,12 @@ export interface AnalyzeResponse {
   confidence: number;
   cached: boolean;
   processing_time_ms: number;
+  // Scrape-failure signaling (URL could not be retrieved)
+  scrape_failed?: boolean;
+  scrape_reason_en?: string;
+  scrape_reason_bn?: string;
+  needs_user_input?: boolean;
+  original_url?: string;
 }
 
 export async function analyzeContent(

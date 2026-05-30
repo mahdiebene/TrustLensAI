@@ -19,6 +19,12 @@ interface AnalysisResult {
   confidence: number;
   cached: boolean;
   processing_time_ms: number;
+  // Scrape-failure signaling
+  scrape_failed?: boolean;
+  scrape_reason_en?: string;
+  scrape_reason_bn?: string;
+  needs_user_input?: boolean;
+  original_url?: string;
 }
 
 type Theme = "light" | "dark" | "system";

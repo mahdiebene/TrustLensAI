@@ -1,17 +1,30 @@
 """Analyze endpoint — main trust scoring API.
 
-Simplified flow: cache check → single AI call → format response.
+Flow:
+  1. Cache check (instant).
+  2. If input is a URL:
+       - For Facebook: try to scrape (Jina Reader → OG fallback).
+         * On success → pass extracted text to AI.
+         * On failure → return a structured `scrape_failed` response asking
+           the user to paste the post text / upload a screenshot. We do NOT
+           run an AI call here, because without the actual content the AI
+           just returns hedged 50/50 scores (poor UX, wasted ~30s).
+       - For other URLs: scrape generically; if it fails, pass the URL itself.
+  3. If input is plain text: pass through directly.
+  4. Run analysis (perplexity-reasoning + gemini summary).
+  5. Cache result for 24h — but NOT errors / all-50 default responses.
 """
 
 import hashlib
 import logging
+import time
 
 from fastapi import APIRouter, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.models.schemas import AnalyzeRequest, AnalyzeResponse
-from app.core.scoring import run_analysis
+from app.models.schemas import AnalyzeRequest, AnalyzeResponse, PillarScore
+from app.core.scoring import run_analysis, PILLAR_WEIGHTS, PILLAR_NAMES_BN
 from app.services.redis_client import get_cache_service
 from app.services.scraper import is_url, is_facebook_url, scrape_url
 
@@ -21,20 +34,58 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _scrape_failed_response(
+    url: str,
+    reason_en: str,
+    reason_bn: str,
+    start_time: float,
+) -> AnalyzeResponse:
+    """Build an AnalyzeResponse signaling scrape failure → frontend should
+    prompt the user for text/image input.
+
+    We return a "neutral / unknown" body (50s, but flagged via
+    `scrape_failed=True` so the frontend renders a different UI). No AI
+    call has been made — this is fast (< 5s).
+    """
+    pillars: list[PillarScore] = []
+    for pillar_key, weight in PILLAR_WEIGHTS.items():
+        pillars.append(PillarScore(
+            name=pillar_key.replace("_", " ").title(),
+            name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
+            score=0.0,
+            weight=weight,
+            explanation_en="Awaiting content — paste the post text or upload a screenshot.",
+            explanation_bn="কনটেন্টের অপেক্ষায় — পোস্টের লেখা পেস্ট করুন বা স্ক্রিনশট আপলোড করুন।",
+            evidence=[],
+            model_used="none",
+            active=False,
+        ))
+
+    processing_time_ms = int((time.time() - start_time) * 1000)
+
+    return AnalyzeResponse(
+        trust_score=0.0,
+        verdict="Content Not Accessible",
+        verdict_bn="কনটেন্ট অ্যাক্সেস করা যায়নি",
+        pillars=pillars,
+        explanation_en=reason_en or "Could not retrieve this URL. Paste the post text or upload a screenshot to get a trust score.",
+        explanation_bn=reason_bn or "এই লিংকটি আনতে পারিনি। ট্রাস্ট স্কোর পেতে পোস্টের লেখা পেস্ট করুন বা স্ক্রিনশট আপলোড করুন।",
+        confidence=0.0,
+        cached=False,
+        processing_time_ms=processing_time_ms,
+        scrape_failed=True,
+        scrape_reason_en=reason_en,
+        scrape_reason_bn=reason_bn,
+        needs_user_input=True,
+        original_url=url,
+    )
+
+
 @router.post("/analyze", response_model=AnalyzeResponse)
 @limiter.limit("10/minute")
 async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResponse:
-    """
-    Analyze content for trustworthiness.
-
-    Architecture (2 API calls total):
-    1. Cache check (instant)
-    2. perplexity-reasoning: reads URL, extracts claims, verifies, scores (~10s)
-    3. gemini-2.5-flash: bilingual summary (~3s)
-
-    For URLs (including Facebook): passed directly to perplexity-reasoning
-    which has built-in web browsing. No separate scraping needed.
-    """
+    """Analyze content for trustworthiness."""
+    start_time = time.time()
     content = body.content.strip()
 
     # ─── Cache check FIRST ───
@@ -47,58 +98,71 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
         return AnalyzeResponse(**cached_result)
 
     # ─── Prepare content for analysis ───
+    analysis_content = content
+    image_url = body.image_url
+
     if is_url(content):
         logger.info(f"[Analyze] URL detected: {content}")
-
-        # Scrape the URL first (Facebook gets special OG-tag extraction)
         scraped = await scrape_url(content)
 
         if scraped["success"] and scraped["text"]:
-            # We have extracted text — pass it to the AI for fact-checking
-            analysis_content = f"URL: {content}\n"
+            # Build a clean prompt input from the extracted text
+            parts = [f"URL: {content}"]
             if scraped.get("source_domain"):
-                analysis_content += f"Source: {scraped['source_domain']}\n"
+                parts.append(f"Source: {scraped['source_domain']}")
             if scraped.get("author"):
-                analysis_content += f"Author: {scraped['author']}\n"
+                parts.append(f"Author / Page: {scraped['author']}")
             if scraped.get("title"):
-                analysis_content += f"Title: {scraped['title']}\n"
-            analysis_content += f"\nExtracted Content:\n{scraped['text']}"
+                parts.append(f"Title: {scraped['title']}")
+            parts.append("")
+            parts.append("Extracted Post Content:")
+            parts.append(scraped["text"])
+            analysis_content = "\n".join(parts)
+
+            # Pass image to AI if scraped one and caller didn't provide
+            if not image_url and scraped.get("image_url"):
+                image_url = scraped["image_url"]
+
             logger.info(
                 f"[Analyze] Scraped {len(scraped['text'])} chars from "
                 f"{'Facebook' if is_facebook_url(content) else 'generic URL'}, passing to analysis"
             )
         else:
-            # Scrape failed — for Facebook this means private/group post
-            # Fall back to perplexity-reasoning with web search instructions
+            # Scrape failed
             if is_facebook_url(content):
-                analysis_content = (
-                    f"URL: {content}\n\n"
-                    f"Instructions: This is a Facebook post URL. The server could not extract "
-                    f"the post text (likely a private or group post). Do the following:\n"
-                    f"1. SEARCH THE WEB for this exact URL or its content\n"
-                    f"2. Look for cached versions, shares on other platforms, or discussions\n"
-                    f"3. Check fact-checking sites that may have reviewed this content\n"
-                    f"4. If you find the content, analyze it for trustworthiness\n"
-                    f"5. If you truly cannot find it anywhere, mark as unverifiable"
+                # User wants: show reason + ask for text/image input.
+                # No AI call — return immediately with structured signal.
+                reason_en = scraped.get("failure_reason") or (
+                    "Could not retrieve this Facebook post — it may be private, "
+                    "in a closed group, deleted, or restricted to logged-in users."
                 )
-                logger.info("[Analyze] Facebook scrape failed (private/group) — falling back to web search")
+                reason_bn = scraped.get("failure_reason_bn") or (
+                    "এই ফেসবুক পোস্টটি আনতে পারিনি — সম্ভবত এটি প্রাইভেট, "
+                    "ক্লোজড গ্রুপে আছে, ডিলিট হয়েছে, অথবা লগইন ছাড়া দেখা যায় না।"
+                )
+                logger.warning(
+                    f"[Analyze] FB scrape failed → returning scrape_failed response. "
+                    f"Reason: {reason_en[:80]}"
+                )
+                result = _scrape_failed_response(content, reason_en, reason_bn, start_time)
+                # Don't cache this — user will retry with text/image
+                return result
             else:
+                # Generic URL scrape failed → let perplexity-reasoning try its own browsing
                 analysis_content = (
                     f"URL: {content}\n"
                     f"Instructions: Read this URL using your web browsing capabilities. "
                     f"Extract the content, then analyze for trustworthiness."
                 )
                 logger.info("[Analyze] Generic scrape failed — passing URL to perplexity-reasoning")
-    else:
-        # Plain text content
-        analysis_content = content
 
     # ─── Run analysis (2 API calls inside) ───
-    result = await run_analysis(content=analysis_content, image_url=body.image_url)
+    result = await run_analysis(content=analysis_content, image_url=image_url)
 
-    # ─── Cache result (24 hours) — but NOT errors/failures ───
+    # ─── Cache result (24h) — but NOT errors / all-default responses ───
     is_error = (
-        result.verdict in ("Analysis Failed", "Error")
+        result.verdict in ("Analysis Failed", "Error", "Content Not Accessible")
+        or result.scrape_failed
         or all(p.score == 50.0 for p in result.pillars)  # all-default scores = AI failed
     )
     if not is_error:

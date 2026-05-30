@@ -285,6 +285,8 @@ async def scrape_facebook_url(url: str) -> dict:
         "success": False,
         "image_url": None,
         "original_url": url,
+        "failure_reason": "",
+        "failure_reason_bn": "",
     }
 
     # Step 1: Resolve share links to real permalink (cheap HEAD request)
@@ -331,6 +333,25 @@ async def scrape_facebook_url(url: str) -> dict:
 
     if not html_text:
         logger.error(f"[Scraper] All FB strategies failed for {resolved_url[:80]}...")
+        # Best-effort failure classification based on URL shape
+        lower = resolved_url.lower()
+        if "/groups/" in lower:
+            result["failure_reason"] = (
+                "This looks like a private Facebook group post. Group posts are not publicly accessible without login."
+            )
+            result["failure_reason_bn"] = (
+                "এটি একটি প্রাইভেট ফেসবুক গ্রুপ পোস্ট। লগইন ছাড়া গ্রুপ পোস্ট অ্যাক্সেস করা যায় না।"
+            )
+        elif "login" in lower or "checkpoint" in lower:
+            result["failure_reason"] = "Facebook requires login to view this post."
+            result["failure_reason_bn"] = "এই পোস্ট দেখতে ফেসবুক লগইন চাইছে।"
+        else:
+            result["failure_reason"] = (
+                "Could not retrieve this Facebook post — it may be private, deleted, or restricted to logged-in users."
+            )
+            result["failure_reason_bn"] = (
+                "এই ফেসবুক পোস্টটি আনতে পারিনি — সম্ভবত এটি প্রাইভেট, ডিলিট করা হয়েছে, অথবা লগইন ছাড়া দেখা যায় না।"
+            )
         return result
 
     soup = BeautifulSoup(html_text, "html.parser")
@@ -362,6 +383,14 @@ async def scrape_facebook_url(url: str) -> dict:
         logger.warning(
             f"[Scraper] FB minimal extraction from {resolved_url[:60]}... "
             f"OG tags: {list(og_tags.keys())}"
+        )
+        result["failure_reason"] = (
+            "Could not extract this Facebook post — the page returned no usable content "
+            "(it may be private, deleted, or restricted to logged-in users)."
+        )
+        result["failure_reason_bn"] = (
+            "এই ফেসবুক পোস্টের কনটেন্ট পাওয়া যায়নি — সম্ভবত এটি প্রাইভেট, ডিলিট হয়েছে, "
+            "বা লগইন ছাড়া দেখা যায় না।"
         )
 
     return result

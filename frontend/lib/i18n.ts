@@ -103,6 +103,17 @@ export const strings = {
     noResults: "এখনো কোনো বিশ্লেষণ ফলাফল নেই।",
     startAnalysis: "নতুন বিশ্লেষণ শুরু করুন →",
     beta: "বেটা",
+
+    // Scrape failure UX
+    scrapeFailedTitle: "এই পোস্টটি অ্যাক্সেস করা যায়নি",
+    scrapeFailedHint: "ট্রাস্ট স্কোর পেতে নিচে পোস্টের লেখা পেস্ট করুন বা স্ক্রিনশটের URL দিন।",
+    pasteTextLabel: "পোস্টের লেখা",
+    pasteTextPlaceholder: "এখানে পোস্টের লেখা পেস্ট করুন...",
+    imageUrlLabel: "ইমেজ URL (ঐচ্ছিক)",
+    imageUrlPlaceholder: "https://...screenshot.jpg",
+    analyzeManual: "এই কনটেন্ট বিশ্লেষণ করুন",
+    backToHome: "হোমে ফিরে যান",
+    originalUrlLabel: "মূল লিংক",
   },
   en: {
     // Core
@@ -204,6 +215,17 @@ export const strings = {
     noResults: "No analysis results yet.",
     startAnalysis: "Start a new analysis →",
     beta: "Beta",
+
+    // Scrape failure UX
+    scrapeFailedTitle: "Couldn't access this post",
+    scrapeFailedHint: "Paste the post text below — or provide a screenshot URL — to get a trust score.",
+    pasteTextLabel: "Post text",
+    pasteTextPlaceholder: "Paste the post text here...",
+    imageUrlLabel: "Image URL (optional)",
+    imageUrlPlaceholder: "https://...screenshot.jpg",
+    analyzeManual: "Analyze this content",
+    backToHome: "Back to home",
+    originalUrlLabel: "Original link",
   },
 } as const;
 
