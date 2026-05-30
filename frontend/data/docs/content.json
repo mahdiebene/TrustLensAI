@@ -1,0 +1,224 @@
+{
+  "updatedAtIso": "2026-05-30T12:34:22.648Z",
+  "version": "1.0.0",
+  "teamName": "TrustLens Core Team",
+  "deck": [
+    {
+      "id": "problem",
+      "title": "Problem",
+      "summary": "Misinformation spreads faster than verification in Bengali social channels.",
+      "details": "Users need fast, explainable trust scoring for posts, links, and claims without requiring domain expertise."
+    },
+    {
+      "id": "solution",
+      "title": "Solution",
+      "summary": "TrustLens turns any claim into a transparent 0-100 trust score.",
+      "details": "Six scoring pillars, bilingual explanations, and evidence cues provide an immediate and understandable verdict."
+    },
+    {
+      "id": "why-now",
+      "title": "Why Now",
+      "summary": "AI model quality and local context analysis are now production-ready.",
+      "details": "TrustLens combines modern multi-model reasoning with Bangladesh-specific misinformation patterns."
+    },
+    {
+      "id": "product-demo",
+      "title": "Product Demo",
+      "summary": "Paste content, get score, inspect pillars, and understand verdict.",
+      "details": "The same trust engine powers web, extension, and Telegram bot channels."
+    },
+    {
+      "id": "market",
+      "title": "Market Opportunity",
+      "summary": "Large Bengali-speaking social media population with high misinformation exposure.",
+      "details": "TrustLens is positioned for newsroom tooling, platform moderation support, and consumer trust checks."
+    },
+    {
+      "id": "business-model",
+      "title": "Business Model",
+      "summary": "Freemium analysis + API licensing + enterprise compliance plans.",
+      "details": "Premium plans include team dashboards, policy controls, SLA, and analytics exports."
+    },
+    {
+      "id": "traction",
+      "title": "Traction",
+      "summary": "Production-grade MVP with integrated backend, frontend, extension, and bot.",
+      "details": "Core analysis pipeline, caching, and bilingual UX are complete and deployed-ready."
+    },
+    {
+      "id": "competition",
+      "title": "Competition",
+      "summary": "Most tools are global-first and not tuned for Bengali misinformation patterns.",
+      "details": "TrustLens differentiates on localized context, explainability depth, and channel integrations."
+    },
+    {
+      "id": "advantage",
+      "title": "Unique Advantage",
+      "summary": "Localized AI trust scoring plus live explainability in a single workflow.",
+      "details": "Graph/RAG-ready architecture and bilingual delivery reduce friction for end users and evaluators."
+    },
+    {
+      "id": "gtm",
+      "title": "Go-To-Market",
+      "summary": "Start with judges, fact-checkers, and creators, then expand to institutions.",
+      "details": "Focus on transparent scoring, public trust, and shareable evidence summaries."
+    },
+    {
+      "id": "team",
+      "title": "Team",
+      "summary": "Cross-functional team across product, AI, backend, and design.",
+      "details": "Execution focus: quality, speed, and explainability for high-trust decisions."
+    },
+    {
+      "id": "vision",
+      "title": "Vision",
+      "summary": "Become the trust infrastructure layer for Bengali digital information.",
+      "details": "Long-term goal: real-time trust intelligence platform for users, media, and institutions."
+    }
+  ],
+  "productOverview": "TrustLens evaluates social posts, links, and article claims to produce an explainable trust score for Bengali and English audiences.",
+  "architectureMermaid": "graph LR\\n  UI[Web UI + Extension + Bot] --> API[Next API Gateway]\\n  API --> BE[FastAPI Trust Engine]\\n  BE --> AI[Pollinations Models]\\n  BE --> Cache[(Redis Cache)]\\n  BE --> Graph[(Neo4j Graph)]\\n  BE --> PG[(PostgreSQL + pgvector)]",
+  "dataFlowMermaid": "flowchart LR\\n  Input[User Input] --> Normalize[Parse + Normalize]\\n  Normalize --> Analyze[Multi-pillar AI Analysis]\\n  Analyze --> Score[Weighted Trust Score]\\n  Score --> Explain[Bilingual Explainability]\\n  Explain --> Output[UI Verdict + Evidence]\\n  Output --> Feedback[User Feedback Loop]",
+  "technologyStack": {
+    "frontend": [
+      "Next.js 14",
+      "React 18",
+      "Tailwind CSS",
+      "Framer Motion"
+    ],
+    "backend": [
+      "FastAPI",
+      "Python 3.12",
+      "SlowAPI rate limiting"
+    ],
+    "data": [
+      "PostgreSQL",
+      "pgvector",
+      "Neo4j",
+      "Redis"
+    ],
+    "ai": [
+      "Pollinations API",
+      "Perplexity-reasoning",
+      "Gemini",
+      "Claude",
+      "Qwen"
+    ],
+    "infra": [
+      "Docker Compose",
+      "Nginx",
+      "VPS deployment scripts"
+    ]
+  },
+  "apiDocumentation": "Exposed API: POST /api/analyze via frontend proxy. Backend route: /api/analyze with rate limit and cache-first strategy. Health route: /api/health. Auth model: currently public API with rate limiting; admin docs controls use token-based access in docs module.",
+  "dataLayer": "Input may be direct text or URLs. Non-social URLs can be scraped, then analyzed. Caching is keyed by content hash for performance and cost control. Persistence layers include Redis cache, PostgreSQL/pgvector, and Neo4j graph for future enrichment.",
+  "aiLayer": "AI scoring is pillar-based and weighted. TrustLens combines model calls with explainability output in Bengali and English. Graph/RAG hooks exist for future contextual reinforcement and retrieval-augmented scoring.",
+  "roadmap": {
+    "short_term": [
+      "Admin publishing workflow hardening",
+      "Docs quality scoring",
+      "Judge-facing one-click share links"
+    ],
+    "mid_term": [
+      "Role-based team workspaces",
+      "Feedback ingestion and retraining loop",
+      "API key management"
+    ],
+    "long_term": [
+      "Institutional compliance dashboards",
+      "Streaming trust signals",
+      "Cross-platform misinformation graph"
+    ]
+  },
+  "performance": "The stack uses cache-first analysis, lightweight UI rendering, and lazy-loaded heavy modules. Documentation module uses section-level rendering, runtime health checks, and export-on-demand endpoints.",
+  "security": "Core API enforces rate limiting and scoped CORS. Docs admin actions are token-protected and server-validated. Public docs visibility is enforced server-side with toggle + scheduling window logic.",
+  "analytics": "KPIs include analyses performed, cache hit ratio, response time, score distribution, and section engagement in docs. This module surfaces runtime metadata and publish history as live state.",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "dateIso": "2026-05-30T12:34:22.648Z",
+      "notes": "Initial launch of live docs module with admin visibility scheduling."
+    }
+  ],
+  "teamMembers": [
+    {
+      "id": "member-1",
+      "name": "Sadman Anik",
+      "role": "Leader — Backend / Database / Scraper Engineer; UI/UX / Frontend Developer",
+      "email": "sadman.anik@trustlens.ai",
+      "photoUrl": ""
+    },
+    {
+      "id": "member-2",
+      "name": "Jason Dhaki",
+      "role": "Member — Presentation / Communication Lead; Business Analyst / Data Scientist",
+      "email": "jason.dhaki@trustlens.ai",
+      "photoUrl": ""
+    },
+    {
+      "id": "member-3",
+      "name": "Mahdi Ebene Mahmud",
+      "role": "Member — Team Leader / Project Coordinator; UI/UX / Frontend Developer; Backend / Database / Scraper Engineer",
+      "email": "mahdi.ebene.mahmud@trustlens.ai",
+      "photoUrl": ""
+    },
+    {
+      "id": "member-4",
+      "name": "Hamza Akter Humaira",
+      "role": "Member — Presentation / Communication Lead; Team Leader / Project Coordinator",
+      "email": "hamza.akter.humaira@trustlens.ai",
+      "photoUrl": ""
+    },
+    {
+      "id": "member-5",
+      "name": "Md Hasibul Alam Prionto",
+      "role": "Member — Presentation / Communication Lead; Business Analyst / Data Scientist",
+      "email": "hasibul.prionto@trustlens.ai",
+      "photoUrl": ""
+    }
+  ],
+  "features": [
+    {
+      "id": "f1",
+      "name": "Trust score with six pillars",
+      "status": "live",
+      "note": "Core trust scoring in production",
+      "source": "backend"
+    },
+    {
+      "id": "f2",
+      "name": "Bilingual explanations",
+      "status": "live",
+      "note": "Bengali and English output",
+      "source": "frontend"
+    },
+    {
+      "id": "f3",
+      "name": "Telegram bot verification",
+      "status": "live",
+      "note": "Forward-to-analyze workflow",
+      "source": "platform"
+    },
+    {
+      "id": "f4",
+      "name": "Chrome extension analyzer",
+      "status": "live",
+      "note": "Popup-based analysis",
+      "source": "platform"
+    },
+    {
+      "id": "f5",
+      "name": "Admin publishing schedule",
+      "status": "upcoming",
+      "note": "Docs lifecycle controls",
+      "source": "frontend"
+    },
+    {
+      "id": "f6",
+      "name": "Workspace-level RBAC",
+      "status": "planned",
+      "note": "Enterprise collaboration controls",
+      "source": "backend"
+    }
+  ]
+}
