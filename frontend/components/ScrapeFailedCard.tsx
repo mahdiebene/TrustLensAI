@@ -33,7 +33,6 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
     setIsAnalyzing(true);
     setAnalysisStatus(t.checkingSources);
 
-    // Build content: include the original URL as context for the AI
     const content = trimmed
       ? `Original URL: ${originalUrl}\n\nUser-provided post text:\n${trimmed}`
       : `Original URL: ${originalUrl}\n\n(No text provided — analyze the screenshot/image.)`;
@@ -54,24 +53,25 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
     }
   };
 
+  const canSubmit = !submitting && (text.trim().length > 0 || imageUrl.trim().length > 0);
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="section-surface p-6 md:p-8 flex flex-col gap-6 max-w-2xl mx-auto w-full"
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+      className="card p-4 md:p-5 flex flex-col gap-5 max-w-2xl mx-auto w-full"
     >
-      {/* Icon + headline */}
-      <div className="flex items-start gap-4">
-        <div className="h-12 w-12 rounded-2xl bg-trust-low/10 border border-trust-low/30 flex items-center justify-center shrink-0">
+      {/* Headline row */}
+      <div className="flex items-start gap-3">
+        <div className="h-9 w-9 rounded-lg bg-trust-low/10 border border-trust-low/30 flex items-center justify-center shrink-0">
           <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="22"
-            height="22"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth="2"
+            strokeWidth="1.75"
             strokeLinecap="round"
             strokeLinejoin="round"
             className="text-trust-low"
@@ -81,54 +81,58 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <h2 className="text-section-header font-semibold heading-tight text-text-primary">
+        <div className="flex flex-col gap-1 min-w-0">
+          <h2 className="text-[17px] md:text-[18px] font-semibold heading-tight text-text-primary">
             {t.scrapeFailedTitle}
           </h2>
-          <p className="text-body text-text-secondary leading-relaxed">{reason}</p>
+          <p className="text-[13px] md:text-[14px] text-text-secondary leading-relaxed">
+            {reason}
+          </p>
         </div>
       </div>
 
       {/* Original URL pill */}
       {originalUrl && (
-        <div className="flex flex-col gap-1">
-          <span className="text-caption text-text-tertiary uppercase caps-wide">
+        <div className="flex flex-col gap-1 -mt-1">
+          <span className="text-[10.5px] tracking-wider uppercase text-text-tertiary font-medium">
             {t.originalUrlLabel}
           </span>
           <a
             href={originalUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-caption text-accent-blue hover:underline break-all"
+            className="text-[12.5px] text-accent-blue hover:underline break-all"
           >
             {originalUrl}
           </a>
         </div>
       )}
 
+      <div className="hr-soft" />
+
       {/* Hint */}
-      <p className="text-body-bn font-bengali text-text-primary leading-relaxed">
+      <p className="text-[13.5px] md:text-[14px] font-bengali text-text-primary leading-[1.7]">
         {t.scrapeFailedHint}
       </p>
 
       {/* Text input */}
-      <div className="flex flex-col gap-2">
-        <label className="text-caption text-text-secondary font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[11px] tracking-wider uppercase text-text-tertiary font-medium">
           {t.pasteTextLabel}
         </label>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={t.pasteTextPlaceholder}
-          rows={6}
-          className="w-full p-4 rounded-lg bg-surface-1 border border-surface-3/40 text-body-bn font-bengali text-text-primary focus:outline-none focus:border-accent-blue focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)] transition-all duration-200 resize-y"
+          rows={5}
+          className="w-full p-3 rounded-lg bg-surface-1 border border-surface-3/40 text-[14px] font-bengali text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-blue/60 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)] transition-all duration-150 resize-y leading-[1.65]"
           disabled={submitting}
         />
       </div>
 
       {/* Image URL input */}
-      <div className="flex flex-col gap-2">
-        <label className="text-caption text-text-secondary font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[11px] tracking-wider uppercase text-text-tertiary font-medium">
           {t.imageUrlLabel}
         </label>
         <input
@@ -136,29 +140,35 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
           placeholder={t.imageUrlPlaceholder}
-          className="w-full p-3 rounded-lg bg-surface-1 border border-surface-3/40 text-body text-text-primary focus:outline-none focus:border-accent-blue focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)] transition-all duration-200"
+          className="w-full px-3 py-2.5 rounded-lg bg-surface-1 border border-surface-3/40 text-[14px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-blue/60 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)] transition-all duration-150"
           disabled={submitting}
         />
       </div>
 
       {/* Local error */}
       {localError && (
-        <p className="text-caption text-trust-low">{localError}</p>
+        <p className="text-[12.5px] text-trust-low flex items-center gap-1.5">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-trust-low" />
+          {localError}
+        </p>
       )}
 
-      {/* Action buttons */}
-      <div className="flex flex-col-reverse sm:flex-row gap-3">
+      {/* Action buttons — full-bleed on mobile, side-by-side on sm+ */}
+      <div className="flex flex-col-reverse sm:flex-row gap-2.5 pt-1">
         <Link
           href="/"
-          className="flex-1 py-3 px-5 rounded-lg text-center font-medium text-body bg-surface-2 text-text-secondary hover:bg-surface-3/50 transition-colors duration-150"
+          className="flex-1 h-11 rounded-lg flex items-center justify-center text-[13.5px] font-medium bg-surface-2 text-text-secondary hover:bg-surface-3/50 active:scale-[0.99] transition-all duration-150"
         >
           ← {t.backToHome}
         </Link>
         <button
           onClick={handleSubmit}
-          disabled={submitting || (!text.trim() && !imageUrl.trim())}
-          className="flex-1 py-3 px-5 rounded-lg font-medium text-body-bn bg-accent-blue text-white hover:bg-accent-blue/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 active:scale-[0.99]"
+          disabled={!canSubmit}
+          className="flex-1 h-11 rounded-lg font-medium text-[13.5px] font-bengali bg-accent-blue text-white hover:bg-accent-blue/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 active:scale-[0.99] flex items-center justify-center gap-2"
         >
+          {submitting && (
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+          )}
           {submitting ? t.analyzing : t.analyzeManual}
         </button>
       </div>

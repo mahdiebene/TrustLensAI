@@ -21,7 +21,7 @@
     --trust-low: #ef4444;
     --accent-blue: #3b82f6;
 
-    /* Glow effects */
+    /* Glow effects (used only on score gauge / radar fill) */
     --glow-green: rgba(34, 197, 94, 0.15);
     --glow-amber: rgba(234, 179, 8, 0.15);
     --glow-red: rgba(239, 68, 68, 0.15);
@@ -51,10 +51,6 @@
 
   body {
     background-color: var(--surface-0);
-    background-image:
-      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
-      radial-gradient(circle at top right, rgba(34, 197, 94, 0.06), transparent 24%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -66,6 +62,26 @@
   .font-bengali {
     font-family: "Hind Siliguri", "Noto Sans Bengali", sans-serif;
     line-height: 1.75;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(59, 130, 246, 0.2);
+    color: var(--text-primary);
+  }
+
+  /* Disable iOS form zoom on focus */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  @media (min-width: 640px) {
+    input,
+    textarea,
+    select {
+      font-size: inherit;
+    }
   }
 }
 
@@ -81,41 +97,53 @@
     color: var(--trust-low);
   }
 
-  /* Card base */
+  /* Card base — flat, low-elevation, no decorative shadow */
   .card {
-    background-color: color-mix(in srgb, var(--surface-1) 92%, transparent);
-    border: 1px solid rgba(39, 39, 42, 0.12);
-    border-radius: 20px;
-    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.04);
-    backdrop-filter: blur(12px);
+    background-color: var(--surface-1);
+    border: 1px solid color-mix(in srgb, var(--surface-3) 60%, transparent);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   }
 
   .dark .card {
-    border-color: rgba(39, 39, 42, 0.55);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 
-  :root .card {
-    border-color: rgba(228, 228, 231, 0.75);
+  /* Section surface — slightly elevated container for primary content */
+  .section-surface {
+    background-color: var(--surface-1);
+    border: 1px solid color-mix(in srgb, var(--surface-3) 60%, transparent);
+    border-radius: 18px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .dark .section-surface {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Subtle divider — for inline section breaks */
+  .hr-soft {
+    height: 1px;
+    background: color-mix(in srgb, var(--surface-3) 50%, transparent);
+    border: 0;
   }
 
   /* Focus ring */
   .focus-ring {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
     border-color: var(--accent-blue);
   }
 
-  .section-surface {
-    border: 1px solid rgba(228, 228, 231, 0.75);
-    background: color-mix(in srgb, var(--surface-1) 88%, transparent);
-    border-radius: 28px;
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.05);
+  /* Pillar accent bar (left edge of pillar cards) */
+  .pillar-accent-high {
+    background: var(--trust-high);
   }
-
-  .dark .section-surface {
-    border-color: rgba(63, 63, 70, 0.8);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+  .pillar-accent-medium {
+    background: var(--trust-medium);
+  }
+  .pillar-accent-low {
+    background: var(--trust-low);
   }
 }
 
@@ -135,4 +163,51 @@
   .caps-wide {
     letter-spacing: 0.05em;
   }
+
+  /* Page background — flat, no gradient */
+  .bg-page {
+    background-color: var(--surface-0);
+  }
+
+  /* Mobile safe-area padding for bottom nav */
+  .pb-safe {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* Reserve space below content so mobile bottom-nav doesn't overlap */
+  .mobile-bottom-pad {
+    padding-bottom: 88px;
+  }
+  @media (min-width: 768px) {
+    .mobile-bottom-pad {
+      padding-bottom: 0;
+    }
+  }
+}
+
+/* Scan-line animation — used by InputForm during analysis. Defined globally so other components can reuse. */
+@keyframes scan-sweep {
+  0% {
+    transform: translateY(-2px);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  90% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(120%);
+    opacity: 0;
+  }
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--accent-blue);
+  box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.4);
+  animation: scan-sweep 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }

@@ -114,6 +114,47 @@ export const strings = {
     analyzeManual: "এই কনটেন্ট বিশ্লেষণ করুন",
     backToHome: "হোমে ফিরে যান",
     originalUrlLabel: "মূল লিংক",
+
+    // Input mode tabs (new)
+    inputMode: "ইনপুট মোড",
+    modeAuto: "স্বয়ংক্রিয়",
+    modeText: "লেখা",
+    modeImage: "ছবি",
+    urlModeHint: "এই লিংকটি যাচাই করতে 'বিশ্বাসযোগ্যতা যাচাই' চাপুন।",
+    imageModeHint: "ছবি ছাড়া কোনো বাড়তি তথ্য দিতে চাইলে এখানে লিখুন (ঐচ্ছিক)।",
+    imageModeHelp: "স্ক্রিনশট বা ছবির সরাসরি লিংক দিন। শুধু পাবলিক URL কাজ করবে।",
+    clear: "মুছুন",
+
+    // Hero (real, no fake numbers)
+    realtimeBadge: "রিয়েল-টাইম",
+    sixSignalBadge: "৬টি বিশ্বাসযোগ্যতা সংকেত",
+    bilingualBadge: "বাংলা ও ইংরেজি",
+    statsPillarsTitle: "৬টি স্বাধীন সংকেত",
+    statsPillarsDesc: "প্রতিটি স্কোর আলাদা পিলারে গণনা করা হয়।",
+    statsBilingualTitle: "বাংলা ও ইংরেজি",
+    statsBilingualDesc: "মিশ্র লেখা স্বয়ংক্রিয়ভাবে শনাক্ত করা হয়।",
+    statsExplainableTitle: "ব্যাখ্যাযোগ্য",
+    statsExplainableDesc: "প্রতিটি রায়ের সঙ্গে প্রমাণ ও যুক্তি।",
+
+    // Footer / honest messaging
+    builtBy: "তৈরি করেছে Potato Crackers",
+    notProduction: "AI কখনো ১০০% নির্ভুল নয় — এই স্কোর শুধু সহায়ক।",
+
+    // Tools section
+    toolTelegramTitle: "টেলিগ্রাম বট",
+    toolTelegramCopy: "যেকোনো টেক্সট বা ছবি বটকে ফরোয়ার্ড করুন তাৎক্ষণিক যাচাইয়ের জন্য।",
+    toolExtensionTitle: "Chrome এক্সটেনশন",
+    toolExtensionCopy: "এক ক্লিকে ব্রাউজার থেকে দাবি যাচাই করুন।",
+    toolDashboardTitle: "ওয়েব ড্যাশবোর্ড",
+    toolDashboardCopy: "এই ওয়েবসাইটেই সম্পূর্ণ স্ক্যানিং সুট।",
+    comingSoon: "শীঘ্রই আসছে",
+    available: "চালু আছে",
+    viewSource: "সোর্স দেখুন",
+
+    // Recent scans
+    verdictTrueShort: "সত্য",
+    verdictFalseShort: "মিথ্যা",
+    verdictMixedShort: "মিশ্র",
   },
   en: {
     // Core
@@ -226,6 +267,47 @@ export const strings = {
     analyzeManual: "Analyze this content",
     backToHome: "Back to home",
     originalUrlLabel: "Original link",
+
+    // Input mode tabs (new)
+    inputMode: "Input mode",
+    modeAuto: "Auto",
+    modeText: "Text",
+    modeImage: "Image",
+    urlModeHint: "Press 'Verify trustworthiness' to check this link.",
+    imageModeHint: "Optionally describe what's in the image, or leave empty.",
+    imageModeHelp: "Direct link to a screenshot or image. Only public URLs work.",
+    clear: "Clear",
+
+    // Hero (real, no fake numbers)
+    realtimeBadge: "Real-time",
+    sixSignalBadge: "6 trust signals",
+    bilingualBadge: "Bengali & English",
+    statsPillarsTitle: "6 independent signals",
+    statsPillarsDesc: "Each score is computed by a dedicated pillar.",
+    statsBilingualTitle: "Bengali & English",
+    statsBilingualDesc: "Mixed-script content is detected automatically.",
+    statsExplainableTitle: "Explainable",
+    statsExplainableDesc: "Every verdict comes with evidence and reasoning.",
+
+    // Footer / honest messaging
+    builtBy: "Built by Potato Crackers",
+    notProduction: "AI is never 100% reliable — this score is a helper, not a verdict.",
+
+    // Tools section
+    toolTelegramTitle: "Telegram Bot",
+    toolTelegramCopy: "Forward any text or image to the bot for an instant check.",
+    toolExtensionTitle: "Chrome Extension",
+    toolExtensionCopy: "Verify claims in the browser with one click.",
+    toolDashboardTitle: "Web Dashboard",
+    toolDashboardCopy: "The full scanning suite — already running in this browser.",
+    comingSoon: "Coming soon",
+    available: "Available now",
+    viewSource: "View source",
+
+    // Recent scans
+    verdictTrueShort: "True",
+    verdictFalseShort: "False",
+    verdictMixedShort: "Mixed",
   },
 } as const;
 

@@ -22,9 +22,21 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TrustLens — বিশ্বাসযোগ্যতা স্কোর",
+  title: "TrustLens — Live Trust Check for Bengali Social Media",
   description:
-    "AI-Powered Trust Scoring Platform for Bengali Social Media. গুজব চিনুন, সত্য জানুন।",
+    "AI-powered trust scoring for Bengali & English social posts. Six independent signals, explainable verdicts. গুজব চিনুন, সত্য জানুন।",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
+  themeColor: "#0b0d10",
+  openGraph: {
+    title: "TrustLens — Live Trust Check",
+    description:
+      "Six-signal trust scoring for Bengali social media. Explainable, bilingual, fast.",
+    type: "website",
+  },
 };
 
 // Inline script to prevent flash of wrong theme
