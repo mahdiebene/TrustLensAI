@@ -19,19 +19,42 @@ export function InputForm() {
 
   const [mode, setMode] = useState<InputMode>("auto");
   const [text, setText] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageDataUrl, setImageDataUrl] = useState<string>("");
+  const [imageFileName, setImageFileName] = useState<string>("");
+  const [imageError, setImageError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [statusText, setStatusText] = useState("");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Detection (Bengali / English / Mixed) + URL chip
   const detection = useMemo_detection(text);
 
   const canSubmit =
     !submitting &&
-    ((mode === "image" && imageUrl.trim().length > 0) ||
+    ((mode === "image" && imageDataUrl.length > 0) ||
       (mode !== "image" && text.trim().length > 0));
+
+  const handleFile = useCallback((file: File | null | undefined) => {
+    setImageError("");
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setImageError(t.imageInvalidType);
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setImageError(t.imageTooLarge);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageDataUrl(typeof reader.result === "string" ? reader.result : "");
+      setImageFileName(file.name);
+    };
+    reader.onerror = () => setImageError(t.imageReadFailed);
+    reader.readAsDataURL(file);
+  }, [t]);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -52,7 +75,10 @@ export function InputForm() {
     try {
       const payload =
         mode === "image"
-          ? { content: text.trim() || imageUrl.trim(), image_url: imageUrl.trim() || undefined }
+          ? {
+              content: text.trim() || imageFileName || "(image upload)",
+              image_url: imageDataUrl || undefined,
+            }
           : { content: text.trim() };
       const data = await analyzeContent(payload);
       setResult(data);
@@ -140,7 +166,7 @@ export function InputForm() {
         )}
       </div>
 
-      {/* Image URL — only when image mode */}
+      {/* Image upload — only when image mode */}
       <AnimatePresence initial={false}>
         {mode === "image" && (
           <motion.div
@@ -153,16 +179,75 @@ export function InputForm() {
           >
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-[0.06em] text-text-tertiary">
-                {t.imageUrlLabel}
+                {t.imageUploadLabel}
               </label>
+
               <input
-                type="url"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder={t.imageUrlPlaceholder}
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => handleFile(e.target.files?.[0])}
                 disabled={submitting}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-surface-1 border border-surface-3/60 text-[14px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-blue focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] transition-all duration-150 disabled:opacity-50"
               />
+
+              {!imageDataUrl ? (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleFile(e.dataTransfer.files?.[0]);
+                  }}
+                  disabled={submitting}
+                  className="w-full flex flex-col items-center justify-center gap-2 px-4 py-6 rounded-xl bg-surface-1 border border-dashed border-surface-3/70 hover:border-accent-blue/60 hover:bg-accent-blue/[0.03] focus:outline-none focus:border-accent-blue focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-text-tertiary">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="9" cy="9" r="1.5" />
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                  </svg>
+                  <span className="text-[13.5px] text-text-secondary">{t.imageUploadCta}</span>
+                  <span className="text-[11.5px] text-text-tertiary">{t.imageUploadHint}</span>
+                </button>
+              ) : (
+                <div className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl bg-surface-1 border border-surface-3/60">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imageDataUrl}
+                    alt="upload preview"
+                    className="h-12 w-12 rounded-md object-cover border border-surface-3/40 shrink-0"
+                  />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-[13px] text-text-primary truncate">{imageFileName}</span>
+                    <span className="text-[11.5px] text-text-tertiary">{t.imageReady}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageDataUrl("");
+                      setImageFileName("");
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    disabled={submitting}
+                    className="px-2.5 py-1 rounded-md text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors duration-150"
+                  >
+                    {t.remove}
+                  </button>
+                </div>
+              )}
+
+              {imageError && (
+                <p className="text-[12px] text-trust-low flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-trust-low" />
+                  {imageError}
+                </p>
+              )}
               <p className="text-[12px] text-text-tertiary">{t.imageModeHelp}</p>
             </div>
           </motion.div>
@@ -187,12 +272,15 @@ export function InputForm() {
           )}
         </button>
 
-        {!submitting && (text || imageUrl) && (
+        {!submitting && (text || imageDataUrl) && (
           <button
             type="button"
             onClick={() => {
               setText("");
-              setImageUrl("");
+              setImageDataUrl("");
+              setImageFileName("");
+              setImageError("");
+              if (fileInputRef.current) fileInputRef.current.value = "";
             }}
             className="px-3.5 py-3 rounded-xl text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors duration-150"
           >

@@ -123,6 +123,14 @@ export const strings = {
     urlModeHint: "এই লিংকটি যাচাই করতে 'বিশ্বাসযোগ্যতা যাচাই' চাপুন।",
     imageModeHint: "ছবি ছাড়া কোনো বাড়তি তথ্য দিতে চাইলে এখানে লিখুন (ঐচ্ছিক)।",
     imageModeHelp: "স্ক্রিনশট বা ছবির সরাসরি লিংক দিন। শুধু পাবলিক URL কাজ করবে।",
+    imageUploadLabel: "ছবি আপলোড করুন",
+    imageUploadCta: "ছবি বাছাই করতে ক্লিক করুন বা এখানে টেনে আনুন",
+    imageUploadHint: "PNG, JPG, WEBP — সর্বোচ্চ ৮MB",
+    imageReady: "বিশ্লেষণের জন্য প্রস্তুত",
+    imageInvalidType: "শুধু ছবি ফাইল গ্রহণযোগ্য",
+    imageTooLarge: "ছবিটি অনেক বড় (সর্বোচ্চ ৮MB)",
+    imageReadFailed: "ছবি পড়া যায়নি",
+    remove: "সরান",
     clear: "মুছুন",
 
     // Hero (real, no fake numbers)
@@ -276,6 +284,14 @@ export const strings = {
     urlModeHint: "Press 'Verify trustworthiness' to check this link.",
     imageModeHint: "Optionally describe what's in the image, or leave empty.",
     imageModeHelp: "Direct link to a screenshot or image. Only public URLs work.",
+    imageUploadLabel: "Upload image",
+    imageUploadCta: "Click to choose an image or drop it here",
+    imageUploadHint: "PNG, JPG, WEBP — up to 8MB",
+    imageReady: "Ready to analyze",
+    imageInvalidType: "Only image files are accepted",
+    imageTooLarge: "Image too large (max 8MB)",
+    imageReadFailed: "Couldn't read image",
+    remove: "Remove",
     clear: "Clear",
 
     // Hero (real, no fake numbers)

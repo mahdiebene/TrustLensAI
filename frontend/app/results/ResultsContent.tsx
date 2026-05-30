@@ -11,6 +11,7 @@ import { ScanAnimation } from "@/components/ScanAnimation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ScrapeFailedCard } from "@/components/ScrapeFailedCard";
+import { Logo } from "@/components/Logo";
 import { useStore } from "@/lib/store";
 import { useI18n } from "@/lib/useI18n";
 import { analyzeContent } from "@/lib/api";
@@ -65,16 +66,8 @@ export function ResultsContent() {
     <div className="flex flex-col gap-8 md:gap-10">
       <header className="sticky top-0 z-20 -mx-6 md:-mx-10 lg:-mx-16 px-6 md:px-10 lg:px-16 py-4 backdrop-blur-md bg-surface-0/80 border-b border-surface-3/50">
         <div className="flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-3 shrink-0">
-            <div className="h-10 w-10 rounded-2xl bg-accent-blue flex items-center justify-center shadow-lg shadow-accent-blue/20">
-              <span className="text-white text-body font-semibold">T</span>
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-section-header font-semibold heading-tight text-text-primary leading-none">
-                TrustLens
-              </h1>
-              <span className="text-caption text-text-tertiary caps-wide uppercase">{t.liveTrustCheck}</span>
-            </div>
+          <Link href="/" className="flex items-center shrink-0">
+            <Logo size={28} showWordmark />
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
