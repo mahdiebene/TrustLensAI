@@ -100,6 +100,14 @@ Per-pillar guidance:
   • Do NOT invent sources. If a search returned nothing, say so.
   • Bengali content is fine — analyze it directly.
 
+═══ BENGALI WRITING RULES (very important) ═══
+  • `explanation_bn` MUST be natural, fluent Bengali — like a Bangladeshi journalist would write.
+  • DO NOT start with "রায়:" or "Verdict:" or any label prefix. Just write the sentence.
+  • DO NOT dump the English enum value (no "mostly_true", "false", "unverifiable" etc). Use the proper Bengali phrase: "অধিকাংশ সত্য", "মিথ্যা", "যাচাইযোগ্য নয়", "বিভ্রান্তিকর", "মূলত মিথ্যা", "সত্য".
+  • Keep proper nouns (company/product names like Reuters, Anthropic, Cursor, ChatGPT, Opus) in their original form — that is correct.
+  • Avoid awkward direct translations from English. Write in Bengali grammar order.
+  • Use Bengali numerals (০-৯) for Bengali numbers, but keep version numbers (4.8) and percentages (50%) in their natural form.
+
 Return THIS EXACT JSON (no markdown, no prose outside the JSON):
 {{
   "content_extracted": "<short summary of what the post actually says, 1-2 sentences>",
@@ -115,8 +123,8 @@ Return THIS EXACT JSON (no markdown, no prose outside the JSON):
     "author_network": {{"score": <0-100>, "reason": "<one sentence about the page/author>"}}
   }},
   "overall_verdict": "true|mostly_true|misleading|mostly_false|false|unverifiable",
-  "explanation_en": "<2-3 sentence English summary. Start with the verdict. Be specific about what is true/false/unverified.>",
-  "explanation_bn": "<2-3 sentence Bengali summary in fluent Bengali. Start with the verdict. Be specific.>"
+  "explanation_en": "<2-3 sentence plain English summary. Specific about what is true/false. Do NOT prefix with 'Verdict:' or the enum tag.>",
+  "explanation_bn": "<২-৩ বাক্যের ঝরঝরে বাংলা সারাংশ। কোনো 'রায়:' উপসর্গ ছাড়া। ইংরেজি enum মান (যেমন mostly_true) লিখবেন না — বাংলা শব্দ ব্যবহার করুন।>"
 }}"""
 
 SUMMARY_PROMPT = """You are a bilingual (English/Bengali) fact-check summarizer.
@@ -127,11 +135,57 @@ The user wants to know: "Is this content TRUE or FALSE?"
 Analysis:
 {analysis_json}
 
+═══ WRITING RULES ═══
+  • English: 2-3 sentences. Plain English. Be specific about what is true/false. Do NOT prefix with "Verdict:" or any label.
+  • Bengali: 2-3 sentences. Fluent, natural Bengali — as a Bangladeshi journalist would write. Do NOT prefix with "রায়:" or any label. Do NOT use English enum tokens like "mostly_true" — use proper Bengali phrases ("অধিকাংশ সত্য", "মিথ্যা", "যাচাইযোগ্য নয়", "বিভ্রান্তিকর", "মূলত মিথ্যা", "সত্য"). Keep proper nouns (Reuters, Anthropic, etc.) as-is.
+
 Return JSON:
 {{
-  "explanation_en": "<2-3 sentence plain English summary. Start with the verdict. Be specific about what claims are true/false.>",
-  "explanation_bn": "<Same summary in Bengali. Start with verdict. Be specific.>"
+  "explanation_en": "<2-3 sentence plain English summary>",
+  "explanation_bn": "<২-৩ বাক্যের ঝরঝরে বাংলা সারাংশ>"
 }}"""
+
+# Map raw enum tokens that sometimes leak into LLM output → human-readable strings.
+VERDICT_REWRITE_EN = {
+    "mostly_true": "Mostly true",
+    "mostly_false": "Mostly false",
+    "unverifiable": "Unverifiable",
+    "misleading": "Misleading",
+    "true": "True",
+    "false": "False",
+}
+VERDICT_REWRITE_BN = {
+    "mostly_true": "অধিকাংশ সত্য",
+    "mostly_false": "মূলত মিথ্যা",
+    "unverifiable": "যাচাইযোগ্য নয়",
+    "misleading": "বিভ্রান্তিকর",
+    "true": "সত্য",
+    "false": "মিথ্যা",
+}
+
+
+def _scrub_explanation(text: str, is_bn: bool) -> str:
+    """Strip enum-tag leakage and label prefixes from LLM-generated explanations."""
+    if not text:
+        return text
+    cleaned = text.strip()
+
+    # Remove leading "Verdict:" / "রায়:" prefix and the token right after it.
+    prefix_patterns = [
+        r"^\s*(?:Verdict|verdict|VERDICT)\s*[:：]\s*([a-zA-Z_]+)\s*[.।]?\s*",
+        r"^\s*রায়\s*[:：]\s*([a-zA-Z_]+)\s*[।.]?\s*",
+        r"^\s*(?:Verdict|verdict|VERDICT)\s*[:：]\s*",
+        r"^\s*রায়\s*[:：]\s*",
+    ]
+    for pat in prefix_patterns:
+        cleaned = re.sub(pat, "", cleaned, count=1)
+
+    # Replace any remaining bare enum tokens with the proper phrase.
+    rewrite_map = VERDICT_REWRITE_BN if is_bn else VERDICT_REWRITE_EN
+    for token, replacement in rewrite_map.items():
+        cleaned = re.sub(rf"\b{re.escape(token)}\b", replacement, cleaned)
+
+    return cleaned.strip()
 
 
 def get_verdict(score: float) -> tuple[str, str]:
@@ -320,6 +374,10 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
 
     processing_time_ms = int((time.time() - start_time) * 1000)
     logger.info(f"[Scoring] Complete in {processing_time_ms}ms. Score={trust_score}, Verdict={verdict_en}")
+
+    # Scrub leaked enum tags / "Verdict:" prefixes from LLM-generated text.
+    explanation_en = _scrub_explanation(explanation_en, is_bn=False)
+    explanation_bn = _scrub_explanation(explanation_bn, is_bn=True)
 
     return AnalyzeResponse(
         trust_score=trust_score,
