@@ -96,7 +96,14 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
     # ─── Run analysis (2 API calls inside) ───
     result = await run_analysis(content=analysis_content, image_url=body.image_url)
 
-    # ─── Cache result (24 hours) ───
-    await cache.set_cached(cache_key, result.model_dump(), ttl=86400)
+    # ─── Cache result (24 hours) — but NOT errors/failures ───
+    is_error = (
+        result.verdict in ("Analysis Failed", "Error")
+        or all(p.score == 50.0 for p in result.pillars)  # all-default scores = AI failed
+    )
+    if not is_error:
+        await cache.set_cached(cache_key, result.model_dump(), ttl=86400)
+    else:
+        logger.warning(f"[Analyze] Skipping cache for error result: {result.verdict}")
 
     return result
