@@ -184,8 +184,14 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
 
     prompt = ANALYSIS_PROMPT.format(content=content)
 
+    # Cascade: perplexity-reasoning (web search) -> mistral (no content filter) -> openai-large
     raw_response = ""
     model_used = "perplexity-reasoning"
+    fallback_models = [
+        ("mistral", 25.0, "mistral-fallback"),
+        ("openai-large", 30.0, "openai-large-fallback"),
+    ]
+
     try:
         raw_response = await client.chat(
             model="perplexity-reasoning",
@@ -198,23 +204,30 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
             max_retries=1,
         )
     except Exception as e:
-        logger.warning(f"[Scoring] perplexity-reasoning failed ({e}); falling back to openai-large")
-        # Fallback to a faster model — no live web search, but still scores from extracted content
-        try:
-            raw_response = await client.chat(
-                model="openai-large",
-                messages=[
-                    {"role": "system", "content": "You are a fact-checking AI. Use your training knowledge. Return ONLY valid JSON. No markdown, no explanation outside the JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                timeout=30.0,
-                max_retries=1,
-            )
-            model_used = "openai-large-fallback"
-        except Exception as e2:
-            logger.error(f"[Scoring] Fallback openai-large also failed: {e2}")
-            return _error_response(f"Both models failed: {e2}", start_time)
+        logger.warning(f"[Scoring] perplexity-reasoning failed ({e}); trying fallbacks")
+        last_err: Exception | None = e
+        for fb_model, fb_timeout, fb_label in fallback_models:
+            try:
+                raw_response = await client.chat(
+                    model=fb_model,
+                    messages=[
+                        {"role": "system", "content": "You are a fact-checking AI. Use your training knowledge. Return ONLY valid JSON. No markdown, no explanation outside the JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    timeout=fb_timeout,
+                    max_retries=1,
+                )
+                model_used = fb_label
+                last_err = None
+                break
+            except Exception as fb_e:
+                logger.warning(f"[Scoring] Fallback {fb_model} failed ({fb_e}); trying next")
+                last_err = fb_e
+                continue
+        if last_err is not None:
+            logger.error(f"[Scoring] All fallbacks failed: {last_err}")
+            return _error_response(f"All models failed: {last_err}", start_time)
 
     step1_time = time.time() - start_time
     logger.info(f"[Scoring] Step 1 complete in {step1_time:.1f}s, response length={len(raw_response)}")

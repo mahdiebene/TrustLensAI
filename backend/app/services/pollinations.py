@@ -7,6 +7,12 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+
+class ContentFilterError(Exception):
+    """Raised when the API rejects a prompt due to content policy (HTTP 400). Don't retry; fall back to a different model."""
+    pass
+
+
 MODEL_MAP = {
     "analysis": "perplexity-reasoning",
     "summary": "gemini-2.5-flash",
@@ -83,7 +89,8 @@ class PollinationsClient:
                 elif response.status_code == 400:
                     error_text = response.text[:300]
                     logger.error(f"[Pollinations] Bad request for {model}: {error_text}")
-                    raise Exception(f"HTTP 400: {error_text}")
+                    # Content filter or bad prompt — don't retry, fail fast so we can fall back
+                    raise ContentFilterError(f"HTTP 400: {error_text}")
                 else:
                     error_text = response.text[:200]
                     raise Exception(f"HTTP {response.status_code}: {error_text}")
@@ -95,6 +102,11 @@ class PollinationsClient:
                     await asyncio.sleep(delay)
                 else:
                     raise Exception(f"Timeout after {retries} attempts for {model}")
+
+            except ContentFilterError:
+                # Content filter rejection — don't retry, propagate so caller can pick a different model
+                logger.warning(f"[Pollinations] Content filter rejected prompt for {model}; not retrying")
+                raise
 
             except Exception as e:
                 if "429" in str(e) or "Rate" in str(e):
