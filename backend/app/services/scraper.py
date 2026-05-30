@@ -253,13 +253,57 @@ async def _scrape_via_jina(url: str) -> dict:
         # 4. Collapse whitespace
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
-        out["text"] = cleaned[:8000]
-        out["success"] = bool(cleaned and len(cleaned) > 20)
-        if out["success"]:
-            logger.info(
-                f"[Scraper] Jina extracted {len(cleaned)} chars, "
-                f"author='{out['author']}', title='{out['title'][:50]}'"
+        # 5. Detect Facebook "post unavailable / restricted" error pages.
+        #    Jina returns these as legitimate-looking content but they're not the post.
+        #    Signals: very short body, or body matches FB error patterns.
+        unavailable_signals = [
+            r"this content isn'?t available",
+            r"this content is no longer available",
+            r"the link you followed may be broken",
+            r"page may have been removed",
+            r"page isn'?t available",
+            r"you must log in to continue",
+            r"log in or sign up to view",
+            r"to see more from .* on facebook, log in",
+            r"privacy settings",
+            r"audience for this post",
+            r"this post is no longer available",
+        ]
+        body_lower = cleaned.lower()
+        matched_signal = next(
+            (pat for pat in unavailable_signals if re.search(pat, body_lower)),
+            None,
+        )
+
+        # Heuristic: if cleaned text is very short (< 200 chars) AND matches an
+        # unavailable signal → it's a FB error page, not real content.
+        # Also: if the cleaned text is dominated by error language (signal
+        # within first 300 chars) and short overall → fail.
+        is_error_page = bool(matched_signal) and len(cleaned) < 1500
+
+        if is_error_page:
+            out["success"] = False
+            out["text"] = ""  # don't pass error page to AI
+            out["failure_reason"] = (
+                "Facebook returned a 'content unavailable' page — this post is "
+                "private, deleted, or restricted to logged-in users."
             )
+            out["failure_reason_bn"] = (
+                "ফেসবুক 'কনটেন্ট উপলব্ধ নয়' পেজ ফেরত দিয়েছে — এই পোস্ট প্রাইভেট, "
+                "ডিলিট হয়েছে, অথবা লগইন ছাড়া দেখা যায় না।"
+            )
+            logger.warning(
+                f"[Scraper] Jina returned FB error page for {url[:60]}... "
+                f"(matched: {matched_signal}, len={len(cleaned)})"
+            )
+        else:
+            out["text"] = cleaned[:8000]
+            out["success"] = bool(cleaned and len(cleaned) > 20)
+            if out["success"]:
+                logger.info(
+                    f"[Scraper] Jina extracted {len(cleaned)} chars, "
+                    f"author='{out['author']}', title='{out['title'][:50]}'"
+                )
     except Exception as e:
         logger.warning(f"[Scraper] Jina request failed for {url[:60]}...: {e}")
 
