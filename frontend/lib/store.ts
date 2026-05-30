@@ -40,6 +40,8 @@ interface AppState {
   setAnalysisStatus: (s: string) => void;
   result: AnalysisResult | null;
   setResult: (r: AnalysisResult | null) => void;
+  error: string | null;
+  setError: (e: string | null) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -53,4 +55,6 @@ export const useStore = create<AppState>((set) => ({
   setAnalysisStatus: (s) => set({ analysisStatus: s }),
   result: null,
   setResult: (r) => set({ result: r }),
+  error: null,
+  setError: (e) => set({ error: e }),
 }));

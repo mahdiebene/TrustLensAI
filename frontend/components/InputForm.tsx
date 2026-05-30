@@ -15,7 +15,7 @@ const URL_REGEX = /https?:\/\/[^\s]+/i;
 export function InputForm() {
   const router = useRouter();
   const t = useI18n();
-  const { setResult, setIsAnalyzing, setAnalysisStatus, language } = useStore();
+  const { setResult, setIsAnalyzing, setAnalysisStatus, setError, language } = useStore();
 
   const [mode, setMode] = useState<InputMode>("auto");
   const [text, setText] = useState("");
@@ -96,6 +96,7 @@ export function InputForm() {
     setSubmitting(true);
     setIsAnalyzing(true);
     setResult(null);
+    setError(null);
 
     const statuses = [t.checkingSources, t.analyzingLanguage, t.crossReferencing, t.generatingScore];
     let i = 0;
@@ -119,8 +120,14 @@ export function InputForm() {
       setResult(data);
       saveRecentScan(payload.content, data);
       router.push("/results");
-    } catch (e) {
+    } catch (e: any) {
       console.error("Analysis failed:", e);
+      const msg =
+        (e && typeof e.message === "string" && e.message) ||
+        (language === "bn"
+          ? "বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
+          : "Analysis failed. Please try again.");
+      setError(msg);
       router.push("/results");
     } finally {
       clearInterval(timer);
