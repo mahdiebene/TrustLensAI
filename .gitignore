@@ -23,6 +23,18 @@ vps_*.txt
 vps_*.json
 vps_*.log
 
+# Local dev scratch — API response dumps, ad-hoc test scripts (not real tests)
+jina_test.txt
+microlink_test.json
+pol_test*.txt
+pol_test*.json
+test_fb_scrape.py
+test_new_scraper.py
+test_scoring.py
+test_scraper_results.txt
+vercel_test_*.json
+vercel_test_*.txt
+
 # Python
 __pycache__/
 *.py[cod]
