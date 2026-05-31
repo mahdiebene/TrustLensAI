@@ -1,10 +1,14 @@
-"""Deploy: git pull + rebuild backend container + clear cache + smoke test."""
-import paramiko
-import time
+"""Deploy: git pull + rebuild backend container + clear cache + smoke test.
 
-VPS_HOST = "107.161.168.216"
-VPS_USER = "root"
-VPS_PASS = "***REDACTED***"
+Usage:
+    set VPS_HOST=...  # or export on Linux
+    set VPS_USER=root
+    set VPS_PASS=...
+    python deploy_jina.py
+"""
+import os
+import sys
+import paramiko
 
 
 def run(client, cmd, timeout=300):
@@ -20,10 +24,18 @@ def run(client, cmd, timeout=300):
 
 
 def main():
+    host = os.environ.get("VPS_HOST")
+    user = os.environ.get("VPS_USER", "root")
+    password = os.environ.get("VPS_PASS")
+
+    if not host or not password:
+        print("ERROR: set VPS_HOST and VPS_PASS environment variables before running.")
+        sys.exit(1)
+
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(
-        VPS_HOST, username=VPS_USER, password=VPS_PASS,
+        host, username=user, password=password,
         look_for_keys=False, allow_agent=False, banner_timeout=20,
     )
 

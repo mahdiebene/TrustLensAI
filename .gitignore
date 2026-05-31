@@ -6,6 +6,23 @@
 # Project docs with secrets
 CLAUDE.md
 
+# VPS / deploy scripts containing credentials — never commit these
+debug_vps.py
+clear_cache.py
+deploy_vps.py
+deploy_vps_now.py
+deploy_backend.py
+fix_vps_env.py
+check_logs.py
+test_vps_*.py
+test_api_quick.py
+rebuild_vps.py
+plans/vps.md
+plans/progress.md
+vps_*.txt
+vps_*.json
+vps_*.log
+
 # Python
 __pycache__/
 *.py[cod]
