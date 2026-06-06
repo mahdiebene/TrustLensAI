@@ -70,64 +70,54 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* ─────────── Hero + Verify ───────────
-          Mobile order: tight headline → INPUT FIRST (above fold) → blurb → feature stats.
-          Desktop: classic 2-column with hero on the left, input on the right.
-       */}
-      <section id="verify" className="flex flex-col gap-5 md:grid md:grid-cols-[1.05fr_0.95fr] md:gap-10 md:items-start md:pt-2">
-        {/* ── Hero text (mobile: order-1, compact) ── */}
-        <div className="flex flex-col gap-3.5 md:gap-6 order-1 md:order-none">
-          <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
+      {/* ─────────── Hero + Verify (combined, mobile-first) ─────────── */}
+      <section id="verify" className="flex flex-col gap-6 md:grid md:grid-cols-[1.05fr_0.95fr] md:gap-10 md:items-start md:pt-2">
+        <div className="flex flex-col gap-5 md:gap-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill tone="surface">{t.realtimeBadge}</Pill>
             <Pill tone="accent">{t.sixSignalBadge}</Pill>
             <Pill tone="surface">{t.bilingualBadge}</Pill>
-            <Pill tone="surface" className="hidden sm:inline-flex">{t.realtimeBadge}</Pill>
           </div>
 
           <h2
             lang={language}
-            className="text-[clamp(1.7rem,6.4vw,3.6rem)] leading-[1.08] md:leading-[1.05] font-semibold tracking-[-0.02em] text-text-primary font-bengali"
+            className="text-[clamp(2rem,7vw,3.6rem)] leading-[1.05] font-semibold tracking-[-0.02em] text-text-primary font-bengali"
           >
             {t.tagline}
           </h2>
 
-          {/* Blurb hidden on mobile to keep input above the fold; visible md+ */}
-          <p className="hidden md:block text-[15px] md:text-[16px] leading-[1.7] text-text-secondary max-w-prose font-bengali">
+          <p className="text-[15px] md:text-[16px] leading-[1.7] text-text-secondary max-w-prose font-bengali">
             {t.heroBlurb}
           </p>
 
-          {/* Feature stats: desktop only — they duplicate the badges on mobile */}
-          <div className="hidden md:grid grid-cols-3 gap-3 max-w-2xl">
+          {/* "Real" stats — features, not made-up numbers */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
             <FeatureStat title={t.statsPillarsTitle} desc={t.statsPillarsDesc} />
             <FeatureStat title={t.statsBilingualTitle} desc={t.statsBilingualDesc} />
             <FeatureStat title={t.statsExplainableTitle} desc={t.statsExplainableDesc} />
           </div>
         </div>
 
-        {/* ── Input card (mobile: order-2, immediately visible after headline) ── */}
-        <div className="section-surface p-4 md:p-5 lg:p-6 flex flex-col gap-3.5 md:gap-4 self-start w-full order-2 md:order-none">
+        {/* Input card — primary action, always visible, even on mobile no-scroll */}
+        <div className="section-surface p-4 md:p-5 lg:p-6 flex flex-col gap-4 self-start w-full">
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
                 {t.reportSection}
               </span>
-              <h3 className="text-[17px] md:text-[18px] font-semibold heading-tight text-text-primary">
+              <h3 className="text-[18px] font-semibold heading-tight text-text-primary">
                 {t.verifyTrustworthiness}
               </h3>
             </div>
-            <span className="text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-accent-blue/10 text-accent-blue shrink-0">
+            <span className="text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-accent-blue/10 text-accent-blue">
               {t.beta}
             </span>
           </div>
           <InputForm />
-          <p className="text-[11.5px] md:text-[12px] text-text-tertiary leading-[1.55] pt-2.5 border-t border-surface-3/40">
+          <p className="text-[12px] text-text-tertiary leading-[1.6] pt-1 border-t border-surface-3/40">
             {t.pastePrompt}
           </p>
         </div>
-
-        {/* ── Blurb (mobile-only, AFTER the input — secondary context) ── */}
-        <p className="md:hidden order-3 text-[14px] leading-[1.7] text-text-secondary font-bengali -mt-1">
-          {t.heroBlurb}
-        </p>
       </section>
 
       {/* ─────────── How it works ─────────── */}
@@ -239,29 +229,17 @@ export default function HomePage() {
 
 /* ─────────── Sub-components ─────────── */
 
-function Pill({
-  children,
-  tone = "surface",
-  className = "",
-}: {
-  children: React.ReactNode;
-  tone?: "surface" | "accent";
-  className?: string;
-}) {
+function Pill({ children, tone = "surface" }: { children: React.ReactNode; tone?: "surface" | "accent" }) {
   if (tone === "accent") {
     return (
-      <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-blue/10 text-accent-blue text-[11px] font-medium tracking-[-0.005em] ${className}`}
-      >
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-blue/10 text-accent-blue text-[11px] font-medium tracking-[-0.005em]">
         <span className="h-1.5 w-1.5 rounded-full bg-accent-blue" />
         {children}
       </span>
     );
   }
   return (
-    <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-full bg-surface-2 border border-surface-3/50 text-[11px] font-medium text-text-secondary tracking-[-0.005em] ${className}`}
-    >
+    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-surface-2 border border-surface-3/50 text-[11px] font-medium text-text-secondary tracking-[-0.005em]">
       {children}
     </span>
   );
