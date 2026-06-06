@@ -155,8 +155,9 @@ export function InputForm() {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Mode tabs */}
-      <div role="tablist" aria-label={t.inputMode} className="flex items-center gap-1 p-1 rounded-xl bg-surface-2/70 border border-surface-3/50 self-start">
+      {/* Mode tabs — single-bordered container; the active pill is a soft surface,
+          no inner border (avoids the "double frame" look). */}
+      <div role="tablist" aria-label={t.inputMode} className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-surface-2/60 ring-1 ring-inset ring-surface-3/55 self-start">
         <ModeTab active={mode === "auto"} onClick={() => setMode("auto")} label={t.modeAuto} />
         <ModeTab active={mode === "text"} onClick={() => setMode("text")} label={t.modeText} />
         <ModeTab active={mode === "image"} onClick={() => setMode("image")} label={t.modeImage} />
@@ -372,7 +373,7 @@ function ModeTab({ active, onClick, label }: { active: boolean; onClick: () => v
       {active && (
         <motion.span
           layoutId="modeTabBg"
-          className="absolute inset-0 rounded-lg bg-surface-1 border border-surface-3/60 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+          className="absolute inset-0 rounded-lg bg-surface-1 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_0_0_1px_rgba(15,23,42,0.04)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.06)]"
           transition={{ type: "spring", stiffness: 380, damping: 30 }}
         />
       )}
