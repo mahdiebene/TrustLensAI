@@ -3,46 +3,79 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * TrustLens palette — premium warm/cool neutrals (no pure white, no pure black).
+   *
+   * Light mode: paper / ivory family. Warm hue ~40°, low chroma. Reads like
+   *             a high-end magazine page, not a fluorescent screen. Inspired by
+   *             Stripe Press, Notion, Are.na.
+   * Dark mode:  graphite / ink family. Cool hue ~225°, low chroma — *not* pure
+   *             black so it doesn't smear on OLED and the eye can rest. Borders
+   *             are a touch lifted so they read as architecture, not noise.
+   *             Inspired by Linear, Vercel, Arc.
+   *
+   * All component styles read from these tokens — change here to retheme.
+   */
   :root {
-    /* Surfaces — Light Mode (default) */
-    --surface-0: #fafafa;
-    --surface-1: #ffffff;
-    --surface-2: #f4f4f5;
-    --surface-3: #e4e4e7;
+    /* Surfaces — Light (paper / ivory) */
+    --surface-0: #F7F6F3; /* page bg — warm off-white */
+    --surface-1: #FCFBF8; /* cards / elevated content */
+    --surface-2: #EFEDE7; /* sunken / hover / chip tray */
+    --surface-3: #D8D5CC; /* border tone (warm taupe) */
 
-    /* Text — Light Mode */
-    --text-primary: #09090b;
-    --text-secondary: #52525b;
-    --text-tertiary: #a1a1aa;
+    /* Text — Light (deep ink, never pure black) */
+    --text-primary: #1A1915;   /* deep warm ink */
+    --text-secondary: #5A584F; /* warm slate */
+    --text-tertiary: #A09D92;  /* paper-edge taupe */
 
-    /* Semantic Colors */
+    /* Semantic */
+    --trust-high: #16a34a;
+    --trust-medium: #ca8a04;
+    --trust-low: #dc2626;
+    --accent-blue: #2563EB;
+
+    /* Soft glows for charts/score — not for general UI */
+    --glow-green: rgba(22, 163, 74, 0.14);
+    --glow-amber: rgba(202, 138, 4, 0.14);
+    --glow-red: rgba(220, 38, 38, 0.14);
+
+    /* Theme-aware shadow ink (used by .card, .section-surface). Warm under
+       light so it tints the paper instead of looking like a grey halo. */
+    --shadow-ink: 24, 22, 18;       /* rgb of warm near-black */
+    --shadow-soft-1: 0 1px 0 rgba(var(--shadow-ink), 0.025);
+    --shadow-soft-2: 0 1px 3px rgba(var(--shadow-ink), 0.05);
+    --shadow-lift-1: 0 1px 0 rgba(var(--shadow-ink), 0.03);
+    --shadow-lift-2: 0 6px 18px -4px rgba(var(--shadow-ink), 0.08);
+  }
+
+  .dark {
+    /* Surfaces — Dark (cool graphite, gentle elevation steps) */
+    --surface-0: #0E1014; /* page bg — cool ink, not pure black */
+    --surface-1: #14171C; /* cards */
+    --surface-2: #1B1E25; /* sunken / hover */
+    --surface-3: #2A2E37; /* border / divider */
+
+    /* Text — Dark (warm-leaning off-white reads softer than #fff) */
+    --text-primary: #ECEAE3;
+    --text-secondary: #A6A39A;
+    --text-tertiary: #6B6A66;
+
+    /* Slightly richer semantics in dark */
     --trust-high: #22c55e;
     --trust-medium: #eab308;
     --trust-low: #ef4444;
     --accent-blue: #3b82f6;
 
-    /* Glow effects (used only on score gauge / radar fill) */
-    --glow-green: rgba(34, 197, 94, 0.15);
-    --glow-amber: rgba(234, 179, 8, 0.15);
-    --glow-red: rgba(239, 68, 68, 0.15);
-  }
+    --glow-green: rgba(34, 197, 94, 0.22);
+    --glow-amber: rgba(234, 179, 8, 0.22);
+    --glow-red: rgba(239, 68, 68, 0.22);
 
-  .dark {
-    /* Surfaces — Dark Mode */
-    --surface-0: #09090b;
-    --surface-1: #0f0f12;
-    --surface-2: #18181b;
-    --surface-3: #27272a;
-
-    /* Text — Dark Mode */
-    --text-primary: #fafafa;
-    --text-secondary: #a1a1aa;
-    --text-tertiary: #52525b;
-
-    /* Glow effects — stronger in dark mode */
-    --glow-green: rgba(34, 197, 94, 0.2);
-    --glow-amber: rgba(234, 179, 8, 0.2);
-    --glow-red: rgba(239, 68, 68, 0.2);
+    /* Cool ink for shadows so they don't look brown on dark */
+    --shadow-ink: 0, 0, 0;
+    --shadow-soft-1: 0 1px 0 rgba(255, 255, 255, 0.025) inset;
+    --shadow-soft-2: 0 1px 3px rgba(0, 0, 0, 0.45);
+    --shadow-lift-1: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    --shadow-lift-2: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
   }
 
   html {
@@ -66,7 +99,7 @@
 
   /* Selection */
   ::selection {
-    background: rgba(59, 130, 246, 0.2);
+    background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
     color: var(--text-primary);
   }
 
@@ -97,68 +130,46 @@
     color: var(--trust-low);
   }
 
-  /* Card base — refined: hairline border, soft shadow, smooth interactive feel */
+  /*
+   * Card — hairline border + warm shadow.
+   * Border opacity is high (so the line is visible against the warm paper)
+   * but kept thin (1px). Shadow uses theme-aware ink.
+   */
   .card {
     background-color: var(--surface-1);
-    border: 1px solid color-mix(in srgb, var(--surface-3) 70%, transparent);
+    border: 1px solid color-mix(in srgb, var(--surface-3) 85%, transparent);
     border-radius: 14px;
-    box-shadow:
-      0 1px 0 rgba(15, 23, 42, 0.02),
-      0 1px 3px rgba(15, 23, 42, 0.04);
+    box-shadow: var(--shadow-soft-1), var(--shadow-soft-2);
     transition:
       border-color 0.2s ease,
       box-shadow 0.2s ease,
       transform 0.2s ease,
       background-color 0.2s ease;
   }
-
   .card:hover {
-    border-color: color-mix(in srgb, var(--surface-3) 95%, transparent);
-    box-shadow:
-      0 1px 0 rgba(15, 23, 42, 0.03),
-      0 4px 14px rgba(15, 23, 42, 0.06);
+    border-color: var(--surface-3);
+    box-shadow: var(--shadow-lift-1), var(--shadow-lift-2);
   }
 
-  .dark .card {
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.02) inset,
-      0 1px 3px rgba(0, 0, 0, 0.4);
-  }
-
-  .dark .card:hover {
-    border-color: color-mix(in srgb, var(--surface-3) 100%, transparent);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.03) inset,
-      0 6px 20px rgba(0, 0, 0, 0.55);
-  }
-
-  /* Section surface — slightly elevated container for primary content */
+  /* Section surface — slightly more elevation, slightly larger radius */
   .section-surface {
     background-color: var(--surface-1);
-    border: 1px solid color-mix(in srgb, var(--surface-3) 75%, transparent);
+    border: 1px solid color-mix(in srgb, var(--surface-3) 90%, transparent);
     border-radius: 18px;
-    box-shadow:
-      0 1px 0 rgba(15, 23, 42, 0.02),
-      0 2px 8px rgba(15, 23, 42, 0.05);
+    box-shadow: var(--shadow-soft-1), var(--shadow-soft-2);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
-  .dark .section-surface {
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.025) inset,
-      0 2px 12px rgba(0, 0, 0, 0.45);
-  }
-
-  /* Primary button — refined */
+  /* Primary button — solid accent w/ a hint of inset highlight + colored drop */
   .btn-primary {
     background-color: var(--accent-blue);
     color: #fff;
-    border: 1px solid color-mix(in srgb, var(--accent-blue) 70%, black);
+    border: 1px solid color-mix(in srgb, var(--accent-blue) 75%, black);
     border-radius: 12px;
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.18) inset,
-      0 1px 2px rgba(15, 23, 42, 0.08),
-      0 6px 14px -4px rgba(59, 130, 246, 0.45);
+      0 1px 2px rgba(15, 23, 42, 0.1),
+      0 6px 14px -4px color-mix(in srgb, var(--accent-blue) 55%, transparent);
     transition:
       background-color 0.18s ease,
       box-shadow 0.18s ease,
@@ -168,8 +179,8 @@
     background-color: color-mix(in srgb, var(--accent-blue) 92%, white);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.22) inset,
-      0 2px 4px rgba(15, 23, 42, 0.1),
-      0 10px 22px -6px rgba(59, 130, 246, 0.55);
+      0 2px 4px rgba(15, 23, 42, 0.12),
+      0 10px 22px -6px color-mix(in srgb, var(--accent-blue) 65%, transparent);
   }
   .btn-primary:active:not(:disabled) {
     transform: translateY(0.5px);
@@ -180,11 +191,11 @@
     box-shadow: none;
   }
 
-  /* Secondary / ghost button — subtle, paired with cards */
+  /* Ghost / secondary */
   .btn-ghost {
     background-color: var(--surface-2);
     color: var(--text-primary);
-    border: 1px solid color-mix(in srgb, var(--surface-3) 70%, transparent);
+    border: 1px solid color-mix(in srgb, var(--surface-3) 80%, transparent);
     border-radius: 12px;
     transition:
       background-color 0.18s ease,
@@ -192,28 +203,28 @@
       transform 0.12s ease;
   }
   .btn-ghost:hover {
-    background-color: color-mix(in srgb, var(--surface-3) 60%, var(--surface-2));
-    border-color: color-mix(in srgb, var(--surface-3) 100%, transparent);
+    background-color: color-mix(in srgb, var(--surface-3) 50%, var(--surface-2));
+    border-color: var(--surface-3);
   }
   .btn-ghost:active {
     transform: translateY(0.5px);
   }
 
-  /* Subtle divider — for inline section breaks */
+  /* Subtle divider */
   .hr-soft {
     height: 1px;
-    background: color-mix(in srgb, var(--surface-3) 50%, transparent);
+    background: color-mix(in srgb, var(--surface-3) 60%, transparent);
     border: 0;
   }
 
-  /* Focus ring — slightly stronger for accessibility */
+  /* Focus ring */
   .focus-ring {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 25%, transparent);
     border-color: var(--accent-blue);
   }
 
-  /* Pillar accent bar (left edge of pillar cards) */
+  /* Pillar accent bar */
   .pillar-accent-high {
     background: var(--trust-high);
   }
@@ -226,12 +237,10 @@
 }
 
 @layer utilities {
-  /* Spacing system - 8px base */
   .gap-grid {
     gap: 12px;
   }
 
-  /* Typography utilities */
   .heading-tight {
     letter-spacing: -0.02em;
   }
@@ -242,17 +251,14 @@
     letter-spacing: 0.05em;
   }
 
-  /* Page background — flat, no gradient */
   .bg-page {
     background-color: var(--surface-0);
   }
 
-  /* Mobile safe-area padding for bottom nav */
   .pb-safe {
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
 
-  /* Reserve space below content so mobile bottom-nav doesn't overlap */
   .mobile-bottom-pad {
     padding-bottom: 88px;
   }
@@ -263,7 +269,7 @@
   }
 }
 
-/* Scan-line animation — used by InputForm during analysis. Defined globally so other components can reuse. */
+/* Scan-line animation — used by InputForm during analysis. */
 @keyframes scan-sweep {
   0% {
     transform: translateY(-2px);
@@ -286,6 +292,6 @@
   right: 0;
   height: 1px;
   background: var(--accent-blue);
-  box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 8px 2px color-mix(in srgb, var(--accent-blue) 40%, transparent);
   animation: scan-sweep 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }

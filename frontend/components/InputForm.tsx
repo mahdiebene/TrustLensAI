@@ -157,7 +157,7 @@ export function InputForm() {
     <div className="flex flex-col gap-3">
       {/* Mode tabs — single-bordered container; the active pill is a soft surface,
           no inner border (avoids the "double frame" look). */}
-      <div role="tablist" aria-label={t.inputMode} className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-surface-2/60 ring-1 ring-inset ring-surface-3/55 self-start">
+      <div role="tablist" aria-label={t.inputMode} className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-surface-2/80 ring-1 ring-inset ring-surface-3/70 self-start">
         <ModeTab active={mode === "auto"} onClick={() => setMode("auto")} label={t.modeAuto} />
         <ModeTab active={mode === "text"} onClick={() => setMode("text")} label={t.modeText} />
         <ModeTab active={mode === "image"} onClick={() => setMode("image")} label={t.modeImage} />
@@ -373,7 +373,8 @@ function ModeTab({ active, onClick, label }: { active: boolean; onClick: () => v
       {active && (
         <motion.span
           layoutId="modeTabBg"
-          className="absolute inset-0 rounded-lg bg-surface-1 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_0_0_1px_rgba(15,23,42,0.04)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.06)]"
+          /* Single floating chip — themed shadow uses warm ink under light, cool under dark */
+          className="absolute inset-0 rounded-lg bg-surface-1 shadow-[0_1px_2px_rgba(24,22,18,0.08),0_0_0_1px_rgba(24,22,18,0.06)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.07)]"
           transition={{ type: "spring", stiffness: 380, damping: 30 }}
         />
       )}
