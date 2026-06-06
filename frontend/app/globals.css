@@ -3,28 +3,24 @@
 @tailwind utilities;
 
 /*
- * TrustLens — premium depth system.
+ * TrustLens — premium depth system.  No gradients. Anywhere.
  *
- * Goals (from user feedback): "looks too flat / simple dark and white. Need
- * more blur, depth, shadow." So this stylesheet now layers FOUR things to
- * fight that flatness:
+ * The page bg is a single FLAT solid (warm paper in light, cool ink in dark).
+ * Depth comes from THREE devices, in this order:
  *
- *   1. AMBIENT MESH        Soft color blobs sit behind the entire page (very
- *                          low alpha) so the bg has living depth instead of
- *                          being one solid neutral.
- *   2. NOISE GRAIN         A faint inline-SVG noise overlay breaks up the
- *                          flatness — the same trick high-end editorial sites
- *                          use to make a flat color feel like paper.
- *   3. GLASS SURFACES      .card and .section-surface use translucent bg +
- *                          backdrop-blur so the mesh shows through and the
- *                          card visibly *floats over* the page.
- *   4. LAYERED SHADOWS     Every elevated surface gets a 4-stop shadow
- *                          (edge / contact / near / far). Combined with an
- *                          inset top highlight (the "glass sheen") this gives
- *                          real perceived elevation, not a flat outline.
+ *   1. NOISE GRAIN         A faint inline-SVG turbulence overlay (3.5% / 5%
+ *                          opacity, mix-blend overlay) breaks up the flat
+ *                          color so it reads as paper / film, not CSS.
+ *   2. GLASS SURFACES      .card and .section-surface use translucent solid
+ *                          bg + backdrop-blur. The grain bleeds through, so
+ *                          cards visibly *float over* the page.
+ *   3. LAYERED SHADOWS     Every elevated surface stacks 5+ shadow stops
+ *                          (edge / contact / near / far / far-hi) plus inset
+ *                          top highlight + inset bottom shadow. That's what
+ *                          gives real perceived elevation.
  *
- * All of it is gated behind @media (prefers-reduced-transparency / motion)
- * so it degrades gracefully on low-power / a11y settings.
+ * All of it is gated behind @media (prefers-reduced-transparency) so it
+ * degrades gracefully for a11y.
  */
 
 @layer base {
@@ -69,13 +65,8 @@
     --glass-bg: rgba(252, 251, 248, 0.72);
     --glass-border: rgba(214, 210, 199, 0.85);
 
-    /* Ambient mesh blobs — light. Indigo + rose, very low alpha. */
-    --mesh-a: rgba(99, 102, 241, 0.18);   /* indigo */
-    --mesh-b: rgba(244, 114, 182, 0.14);  /* rose */
-    --mesh-c: rgba(56, 189, 248, 0.12);   /* sky */
-
     /* Noise grain alpha (multiplied into the SVG below). */
-    --grain-alpha: 0.025;
+    --grain-alpha: 0.035;
   }
 
   .dark {
@@ -114,12 +105,7 @@
     --glass-bg: rgba(20, 23, 28, 0.62);
     --glass-border: rgba(45, 49, 59, 0.9);
 
-    /* Richer, slightly more saturated mesh under dark — pops nicely. */
-    --mesh-a: rgba(99, 102, 241, 0.28);
-    --mesh-b: rgba(168, 85, 247, 0.22);
-    --mesh-c: rgba(34, 211, 238, 0.18);
-
-    --grain-alpha: 0.04;
+    --grain-alpha: 0.05;
   }
 
   html {
@@ -139,31 +125,14 @@
   }
 
   /*
-   * AMBIENT MESH layer — fixed, behind everything, never scrolls.
-   * Three large radial gradients form a soft color "weather system" behind
-   * the page. The background-attachment:fixed keeps it parallax-stable.
-   */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -2;
-    pointer-events: none;
-    background:
-      radial-gradient(60vw 60vw at 12% 8%,  var(--mesh-a) 0%, transparent 60%),
-      radial-gradient(50vw 50vw at 88% 22%, var(--mesh-b) 0%, transparent 65%),
-      radial-gradient(70vw 70vw at 50% 110%, var(--mesh-c) 0%, transparent 60%);
-    /* Small, slow drift — barely noticeable, but adds life. */
-    animation: mesh-drift 24s ease-in-out infinite alternate;
-    will-change: transform;
-  }
-
-  /*
-   * NOISE GRAIN layer — fixed, above the mesh but below content.
+   * NOISE GRAIN layer — fixed, behind content. The ONLY bg treatment.
+   * No gradients, no color blobs — just a faint film grain over the solid
+   * surface-0. This is the editorial trick that makes flat colors feel
+   * like real paper / film stock instead of digital flat color.
    * Inline SVG turbulence at low opacity. This is the secret sauce that
    * makes flat colors read as paper / film.
    */
-  body::after {
+  body::before {
     content: "";
     position: fixed;
     inset: 0;
@@ -176,17 +145,9 @@
     mix-blend-mode: overlay;
   }
 
-  @keyframes mesh-drift {
-    0%   { transform: translate3d(0, 0, 0) scale(1); }
-    100% { transform: translate3d(-2%, 1.5%, 0) scale(1.05); }
-  }
-
-  /* A11y — kill the heavy stuff for users who ask. */
-  @media (prefers-reduced-motion: reduce) {
-    body::before { animation: none; }
-  }
+  /* A11y — kill the grain for users who ask. */
   @media (prefers-reduced-transparency: reduce) {
-    body::before, body::after { display: none; }
+    body::before { display: none; }
   }
 
   [lang="bn"], .font-bengali {
@@ -284,21 +245,17 @@
     box-shadow: var(--elev-edge), var(--elev-contact);
   }
 
-  /* Primary button — solid accent + colored drop shadow + inner highlight.
-     The colored shadow is what makes it look "lit" instead of pasted on. */
+  /* Primary button — flat solid accent + layered colored shadow.
+     The colored drop is what makes it look "lit" against the page. NO gradient. */
   .btn-primary {
     position: relative;
-    background-image: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--accent-blue) 88%, white) 0%,
-      var(--accent-blue) 100%
-    );
+    background-color: var(--accent-blue);
     color: #fff;
     border: 1px solid color-mix(in srgb, var(--accent-blue) 70%, black);
     border-radius: 12px;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.25),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.14),
       0 1px 2px rgba(15, 23, 42, 0.12),
       0 8px 18px -6px color-mix(in srgb, var(--accent-blue) 65%, transparent),
       0 16px 32px -12px color-mix(in srgb, var(--accent-blue) 50%, transparent);
