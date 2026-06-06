@@ -1,10 +1,45 @@
-"""TrustLens scoring engine — single-call architecture.
+"""TrustLens scoring engine — verifier-first 2-pass architecture.
 
-Uses ONE perplexity-reasoning call for complete analysis (URL reading, claim
-extraction, web verification, all 6 pillar scores) followed by ONE gemini-2.5-flash
-call for summary generation. Total: ~13s, 2 API calls.
+WHY THIS REWRITE
+================
+The previous "single mega-prompt" approach asked one model (perplexity-reasoning)
+to (a) read the post, (b) verify claims via web search, (c) score 6 pillars,
+and (d) produce bilingual summaries — all inside one giant JSON-output call.
+
+Empirically that caused **role-conflict**: when the model saw a heavyweight
+structured-output rubric it slipped back into "training-data persona" and
+produced confident verdicts based on stale memory (e.g., insisting Sheikh
+Hasina is still PM of Bangladesh in 2026, when she is not).
+
+Probe results from inside the production container (probe_recency.py) confirm:
+  • `perplexity-reasoning` answers "Tarique Rahman, sworn in Feb 2026"
+    CORRECTLY when asked directly with a small terse prompt — same model gave
+    WRONG verdicts when the question was buried in a 100-line JSON rubric.
+  • Fallbacks `mistral` and `openai` HAVE NO LIVE WEB ACCESS — they explicitly
+    say so when asked. They cannot fact-check current events. The old cascade
+    routed traffic to them when perplexity timed out, producing confidently-
+    wrong verdicts.
+  • `gemini-2.5-flash` (used for summary) RETURNS HTTP 400 — alias is dead.
+    Current alias is `gemini-3.5-flash`. Summary step was silently failing.
+
+NEW ARCHITECTURE
+================
+Pass 1 — VERIFY (parallel, web-grounded, terse output):
+    Call BOTH `gemini-search-fast` (Google grounded search) and
+    `perplexity-fast` in parallel with a SMALL prompt that does ONE thing:
+    extract claims and run live web searches. Two independent searches →
+    cross-check → high recall.
+
+Pass 2 — SCORE (single call, reasoning over verified evidence):
+    Feed the verifier outputs + original content into a scoring-only call on
+    `openai-large` (reasoning, 1M ctx). The model's only job is "given this
+    PRE-VERIFIED evidence, score 6 pillars and write a summary." No web
+    search needed at this stage → no role-conflict, no stale memory.
+
+Total: ~10-15s, ~3 API calls, dramatically higher accuracy.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -35,7 +70,6 @@ PILLAR_NAMES_BN = {
     "author_network": "লেখক নেটওয়ার্ক",
 }
 
-# Verdict mappings — now truth-focused
 VERDICTS = [
     (85, "True / Verified", "সত্য / যাচাইকৃত"),
     (70, "Mostly True", "অধিকাংশ সত্য"),
@@ -45,125 +79,138 @@ VERDICTS = [
     (0, "Unverifiable", "যাচাইযোগ্য নয়"),
 ]
 
-ANALYSIS_PROMPT = """You are TrustLens, a fact-checking AI for Bengali / Bangladeshi social media.
+# ───────────── PASS 1: VERIFIER PROMPT ─────────────
+# Tiny, terse, single-purpose. Forces live web search.
+VERIFY_PROMPT = """You are a real-time fact-checker with live web search access.
 
-═══ TODAY'S DATE: {today} ═══
-This is the REAL current date. Your training data is older than this. For ANY claim
-about a current office-holder (Prime Minister, President, Chief Adviser, ministers,
-party heads, election winners, etc.), about an ongoing event, or about anything
-time-sensitive, you MUST trust fresh web search results from {year} over your
-training knowledge. Bangladesh has had major political upheaval since 2024 — the
-person you remember as PM may no longer hold that office. ALWAYS verify with a
-current web search before scoring a political claim as false.
+═══ TODAY: {today} ═══
+Your training data is older than today. For ANY claim about a current
+office-holder, recent event, or anything time-sensitive you MUST search the
+web NOW and trust fresh search results over your training data. Bangladesh
+has had major political change since August 2024 — verify, don't assume.
 
-The content below has ALREADY BEEN EXTRACTED for you (post text, author, source). Do NOT
-say you cannot read URLs — work with the text provided. Use web search to verify the
-factual claims you find in the text.
-
-CONTENT TO ANALYZE:
+CONTENT TO FACT-CHECK:
 ---
 {content}
 ---
 
-WHAT TO DO:
-1. Read the extracted text above carefully.
-2. List every concrete factual claim (who/what/where/when, numbers, named people, events).
-3. For each claim, run a CURRENT web search (year {year}) and report what you found.
-   For political offices, search "Bangladesh Prime Minister {year}" or "Bangladesh
-   current government {year}" — DO NOT rely on what you remember from training.
-4. If your training knowledge contradicts fresh search results, TRUST THE SEARCH RESULTS.
-   Cite the source URL and its date.
-5. Detect manipulation cues: emotional/inflammatory words, fear-mongering, urgency, undisclosed bias.
-6. Apply the Bangladesh context: known misinformation patterns, partisan accounts, communal framing.
-7. Score the 6 pillars 0–100 using the rubric below — and DO NOT default to 50 unless you genuinely have no signal at all.
+TASK:
+1. Extract every concrete factual claim (people, dates, numbers, events).
+2. For each claim, run a CURRENT web search (year {year}). For Bangladesh
+   political claims, search "Bangladesh Prime Minister {year}" or "Bangladesh
+   current government {year}". Use Bengali search terms too.
+3. Mark each claim: true / false / misleading / unverifiable.
+4. Cite the source URL and its publication date (the actual date on the
+   article, not today's date).
 
-═══ SCORING RUBRIC (use these anchors, don't hedge at 50) ═══
+Return ONLY this JSON, nothing else:
+{{
+  "today": "{today}",
+  "summary": "<1-sentence neutral summary of what the post says>",
+  "claims": [
+    {{
+      "claim": "<the specific claim, in English>",
+      "verdict": "true|false|misleading|unverifiable",
+      "evidence": "<what your search found, 1-2 sentences>",
+      "source_url": "<actual URL from search>",
+      "source_date": "<YYYY-MM-DD if known, else unknown>",
+      "source_outlet": "<e.g., Reuters, Prothom Alo, BBC Bangla>"
+    }}
+  ],
+  "overall": "true|mostly_true|misleading|mostly_false|false|unverifiable",
+  "key_finding": "<1 sentence — the single fact that decides this verdict>"
+}}"""
 
+# ───────────── PASS 2: SCORING PROMPT ─────────────
+# Reasoning over already-verified evidence. NO web search expected.
+SCORE_PROMPT = """You are TrustLens, scoring trustworthiness based on PRE-VERIFIED
+fact-check evidence retrieved seconds ago from live web searches.
+
+═══ TODAY: {today} ═══
+
+ORIGINAL CONTENT:
+---
+{content}
+---
+
+═══ FACT-CHECK EVIDENCE (live web searches, just retrieved) ═══
+
+Source A — Google Grounded Search (gemini-search-fast):
+{evidence_a}
+
+Source B — Perplexity Web Search (perplexity-fast):
+{evidence_b}
+
+═══ YOUR JOB ═══
+DO NOT do new web searches. Use ONLY the evidence above — it was retrieved
+moments ago from the live web. If both sources agree on a fact treat it as
+verified. If they disagree, prefer the one citing a more reputable outlet
+(Reuters, AP, BBC, Prothom Alo, AFP, Rumor Scanner, BOOM). If both say
+"unverifiable" be decisive (low score for content_consistency) — do NOT
+default to 50.
+
+Score the 6 trust pillars 0-100. Be DECISIVE — a 50 across the board is a
+failure mode. Pick a side based on evidence.
+
+═══ SCORING RUBRIC ═══
 For EVERY pillar:
-  • 85–100 → Strong evidence FOR trustworthiness (verified by reputable sources, neutral language, established author).
-  • 60–84  → Mostly trustworthy with minor concerns.
-  • 40–59  → Mixed / genuinely ambiguous — only use when evidence is balanced, NOT as a "safe" default.
-  • 15–39  → Mostly untrustworthy (contradicted by sources, manipulative language, suspicious account).
-  • 0–14   → Strong evidence AGAINST (clearly false, fabricated, known disinformation).
+  • 85-100 → Strong evidence FOR trustworthiness.
+  • 60-84  → Mostly trustworthy with minor concerns.
+  • 40-59  → Mixed / genuinely ambiguous (use sparingly).
+  • 15-39  → Mostly untrustworthy.
+  • 0-14   → Strong evidence AGAINST.
 
 Per-pillar guidance:
-  • content_consistency (40% weight, MOST IMPORTANT): How well do the claims hold up against web sources?
-      - Multiple reputable sources confirm → 80+
-      - No matching coverage anywhere (only the original post) → 25–40 (suspicious, not "neutral")
-      - Reputable sources contradict → 5–20
-  • source_reputation: Is the page/author/domain known and credible?
-      - Established outlet (BBC Bangla, Prothom Alo, BOOM, Rumor Scanner) → 80+
-      - Anonymous/unknown FB page with partisan framing → 20–40
-      - Known disinformation source → 0–15
+  • content_consistency (40% weight): How well do the claims hold up against
+    the verified evidence above?
+      - Both sources confirm → 80+
+      - Sources contradict the post → 5-20
+      - No coverage anywhere → 25-40
+  • source_reputation: Is the page/author/domain credible?
+      - Established outlet (BBC Bangla, Prothom Alo, Reuters, AP) → 80+
+      - Anonymous FB page with partisan framing → 20-40
+      - Known disinformation source → 0-15
   • language_analysis: Tone & framing.
-      - Neutral, factual, attributed quotes → 70+
-      - Hedged ("reportedly", "allegedly") → 50–65
-      - Emotional/inflammatory/loaded words, ALL CAPS, excessive punctuation → 15–35
+      - Neutral, factual, attributed → 70+
+      - Hedged / qualified → 50-65
+      - Emotional, ALL CAPS, loaded words → 15-35
   • bengali_context: Bangladesh-specific patterns.
       - Aligns with verified local reporting → 70+
-      - Matches known rumor template (communal, political smear, miracle cure, etc.) → 10–30
+      - Matches known rumor template (communal, smear) → 10-30
   • author_network: The poster.
       - Verified journalist / official page → 80+
-      - Random page with low followers / no track record → 30–50
-      - Page known for partisan rumor-mongering → 10–25
-  • image_authenticity: Only if an image is referenced. If no image at all → score 50 and say "no image to assess".
+      - Random page, low followers, no track record → 30-50
+      - Page known for partisan rumor-mongering → 10-25
+  • image_authenticity: Only if an image is referenced. None → 50 ("no image").
 
-═══ HARD RULES ═══
-  • Be DECISIVE. A score of exactly 50 across multiple pillars is a failure mode — pick a side based on evidence.
-  • If the claim is unverifiable due to lack of sources, that itself is a NEGATIVE signal for content_consistency (score it 25–40, not 50).
-  • Do NOT invent sources. If a search returned nothing, say so.
-  • Bengali content is fine — analyze it directly.
-  • RECENCY OVERRIDE: If your search returns articles dated within the last 12 months
-    that contradict your training-data memory, the SEARCH WINS. Especially for current
-    office-holders, election results, and ongoing events. Never mark a current-office
-    claim as "false" based on training data alone — only based on a current search.
+═══ BENGALI WRITING RULES ═══
+  • `explanation_bn` MUST be natural fluent Bengali — like a Bangladeshi
+    journalist would write.
+  • DO NOT start with "রায়:" / "Verdict:" / any label prefix.
+  • DO NOT dump raw enum tokens (no "mostly_true", "false", "unverifiable").
+    Use proper Bengali phrases: "অধিকাংশ সত্য", "মিথ্যা", "যাচাইযোগ্য নয়",
+    "বিভ্রান্তিকর", "মূলত মিথ্যা", "সত্য".
+  • Keep proper nouns (Reuters, AP, etc.) in original form.
+  • Use Bengali numerals (০-৯) for plain numbers; keep version numbers and
+    percentages in their natural form.
 
-═══ BENGALI WRITING RULES (very important) ═══
-  • `explanation_bn` MUST be natural, fluent Bengali — like a Bangladeshi journalist would write.
-  • DO NOT start with "রায়:" or "Verdict:" or any label prefix. Just write the sentence.
-  • DO NOT dump the English enum value (no "mostly_true", "false", "unverifiable" etc). Use the proper Bengali phrase: "অধিকাংশ সত্য", "মিথ্যা", "যাচাইযোগ্য নয়", "বিভ্রান্তিকর", "মূলত মিথ্যা", "সত্য".
-  • Keep proper nouns (company/product names like Reuters, Anthropic, Cursor, ChatGPT, Opus) in their original form — that is correct.
-  • Avoid awkward direct translations from English. Write in Bengali grammar order.
-  • Use Bengali numerals (০-৯) for Bengali numbers, but keep version numbers (4.8) and percentages (50%) in their natural form.
-
-Return THIS EXACT JSON (no markdown, no prose outside the JSON):
+Return ONLY this JSON:
 {{
-  "content_extracted": "<short summary of what the post actually says, 1-2 sentences>",
-  "claims": [
-    {{"claim": "<specific claim>", "verdict": "true|false|unverifiable|misleading", "evidence": "<source URL or what your search found>"}}
-  ],
   "pillar_scores": {{
-    "source_reputation": {{"score": <0-100>, "reason": "<one sentence, cite a signal>"}},
-    "content_consistency": {{"score": <0-100>, "reason": "<one sentence, cite what search found>"}},
-    "language_analysis": {{"score": <0-100>, "reason": "<one sentence, cite specific words/tone>"}},
+    "source_reputation": {{"score": <0-100>, "reason": "<one sentence>"}},
+    "content_consistency": {{"score": <0-100>, "reason": "<cite verified evidence>"}},
+    "language_analysis": {{"score": <0-100>, "reason": "<one sentence>"}},
     "bengali_context": {{"score": <0-100>, "reason": "<one sentence>"}},
     "image_authenticity": {{"score": <0-100>, "reason": "<one sentence or 'no image'>"}},
-    "author_network": {{"score": <0-100>, "reason": "<one sentence about the page/author>"}}
+    "author_network": {{"score": <0-100>, "reason": "<one sentence>"}}
   }},
   "overall_verdict": "true|mostly_true|misleading|mostly_false|false|unverifiable",
-  "explanation_en": "<2-3 sentence plain English summary. Specific about what is true/false. Do NOT prefix with 'Verdict:' or the enum tag.>",
-  "explanation_bn": "<২-৩ বাক্যের ঝরঝরে বাংলা সারাংশ। কোনো 'রায়:' উপসর্গ ছাড়া। ইংরেজি enum মান (যেমন mostly_true) লিখবেন না — বাংলা শব্দ ব্যবহার করুন।>"
+  "explanation_en": "<2-3 sentences. Specific. No 'Verdict:' prefix.>",
+  "explanation_bn": "<২-৩ বাক্যের ঝরঝরে বাংলা। 'রায়:' উপসর্গ ছাড়া। ইংরেজি enum না।>",
+  "evidence_urls": ["<top 3 actual URLs from the evidence above>"]
 }}"""
 
-SUMMARY_PROMPT = """You are a bilingual (English/Bengali) fact-check summarizer.
-
-Given this analysis result, produce a clear, concise summary for the user.
-The user wants to know: "Is this content TRUE or FALSE?"
-
-Analysis:
-{analysis_json}
-
-═══ WRITING RULES ═══
-  • English: 2-3 sentences. Plain English. Be specific about what is true/false. Do NOT prefix with "Verdict:" or any label.
-  • Bengali: 2-3 sentences. Fluent, natural Bengali — as a Bangladeshi journalist would write. Do NOT prefix with "রায়:" or any label. Do NOT use English enum tokens like "mostly_true" — use proper Bengali phrases ("অধিকাংশ সত্য", "মিথ্যা", "যাচাইযোগ্য নয়", "বিভ্রান্তিকর", "মূলত মিথ্যা", "সত্য"). Keep proper nouns (Reuters, Anthropic, etc.) as-is.
-
-Return JSON:
-{{
-  "explanation_en": "<2-3 sentence plain English summary>",
-  "explanation_bn": "<২-৩ বাক্যের ঝরঝরে বাংলা সারাংশ>"
-}}"""
-
-# Map raw enum tokens that sometimes leak into LLM output → human-readable strings.
+# Map raw enum tokens → human-readable strings (for scrubber).
 VERDICT_REWRITE_EN = {
     "mostly_true": "Mostly true",
     "mostly_false": "Mostly false",
@@ -183,12 +230,10 @@ VERDICT_REWRITE_BN = {
 
 
 def _scrub_explanation(text: str, is_bn: bool) -> str:
-    """Strip enum-tag leakage and label prefixes from LLM-generated explanations."""
+    """Strip enum-tag leakage and label prefixes from LLM-generated text."""
     if not text:
         return text
     cleaned = text.strip()
-
-    # Remove leading "Verdict:" / "রায়:" prefix and the token right after it.
     prefix_patterns = [
         r"^\s*(?:Verdict|verdict|VERDICT)\s*[:：]\s*([a-zA-Z_]+)\s*[.।]?\s*",
         r"^\s*রায়\s*[:：]\s*([a-zA-Z_]+)\s*[।.]?\s*",
@@ -197,17 +242,13 @@ def _scrub_explanation(text: str, is_bn: bool) -> str:
     ]
     for pat in prefix_patterns:
         cleaned = re.sub(pat, "", cleaned, count=1)
-
-    # Replace any remaining bare enum tokens with the proper phrase.
     rewrite_map = VERDICT_REWRITE_BN if is_bn else VERDICT_REWRITE_EN
     for token, replacement in rewrite_map.items():
         cleaned = re.sub(rf"\b{re.escape(token)}\b", replacement, cleaned)
-
     return cleaned.strip()
 
 
 def get_verdict(score: float) -> tuple[str, str]:
-    """Get verdict strings based on score."""
     for threshold, en, bn in VERDICTS:
         if score >= threshold:
             return en, bn
@@ -215,221 +256,366 @@ def get_verdict(score: float) -> tuple[str, str]:
 
 
 def _extract_json(text: str) -> dict | None:
-    """Extract JSON from a response that may contain markdown code blocks or extra text."""
-    # Remove markdown code blocks
+    """Extract JSON from a response that may have markdown code fences."""
+    if not text:
+        return None
     if "```" in text:
-        # Try to extract content between ```json and ```
-        json_block = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
-        if json_block:
-            text = json_block.group(1)
-
-    # Find the outermost JSON object
-    json_match = re.search(r'\{[\s\S]*\}', text)
-    if json_match:
+        m = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", text)
+        if m:
+            text = m.group(1)
+    m = re.search(r"\{[\s\S]*\}", text)
+    if not m:
+        return None
+    raw = m.group()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Strip trailing commas before } or ]
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)
         try:
-            return json.loads(json_match.group())
+            return json.loads(raw)
         except json.JSONDecodeError:
-            # Try fixing common issues
-            raw = json_match.group()
-            # Remove trailing commas before } or ]
-            raw = re.sub(r',\s*([}\]])', r'\1', raw)
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                pass
-    return None
+            return None
 
 
-async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeResponse:
-    """
-    Run complete analysis with 2 API calls:
-    1. perplexity-reasoning: reads URL, extracts claims, verifies, scores all pillars
-    2. gemini-2.5-flash: generates bilingual summary
+def _stringify_verifier_output(data: dict | None, fallback: str) -> str:
+    """Turn a verifier JSON dict into a compact human/LLM-readable block."""
+    if not data:
+        return f"(no structured output — raw: {fallback[:300]})"
+    out = []
+    if "summary" in data:
+        out.append(f"Summary: {data['summary']}")
+    if "overall" in data:
+        out.append(f"Overall: {data['overall']}")
+    if "key_finding" in data:
+        out.append(f"Key finding: {data['key_finding']}")
+    claims = data.get("claims", [])
+    if claims:
+        out.append("Claims:")
+        for c in claims[:8]:
+            if not isinstance(c, dict):
+                continue
+            line = (
+                f"  • [{c.get('verdict', '?')}] {c.get('claim', '')[:200]} "
+                f"— {c.get('evidence', '')[:200]} "
+                f"(src: {c.get('source_outlet', '?')} {c.get('source_url', '')[:80]} "
+                f"@ {c.get('source_date', '?')})"
+            )
+            out.append(line)
+    return "\n".join(out) or f"(empty structured output; raw: {fallback[:300]})"
 
-    Total target: ~13 seconds.
-    """
-    start_time = time.time()
+
+async def _verify_with_model(
+    model: str,
+    prompt: str,
+    timeout: float,
+    label: str,
+) -> tuple[dict | None, str]:
+    """Run one verifier call. Returns (parsed_json_or_none, raw_text)."""
     client = get_pollinations_client()
+    try:
+        raw = await client.chat(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a real-time fact-checker. You have live web "
+                        "search access — use it. Return ONLY valid JSON, no "
+                        "prose outside it."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            timeout=timeout,
+            max_retries=1,
+        )
+        parsed = _extract_json(raw)
+        logger.info(
+            f"[Verify:{label}] {model} returned {len(raw)} chars, "
+            f"parsed={'yes' if parsed else 'no'}, "
+            f"claims={len(parsed.get('claims', [])) if parsed else 0}"
+        )
+        return parsed, raw
+    except Exception as e:
+        logger.warning(f"[Verify:{label}] {model} failed: {type(e).__name__}: {e}")
+        return None, ""
 
-    # ─── Step 1: Analysis call ───
-    has_image = bool(image_url)
-    logger.info(f"[Scoring] Step 1: analysis starting (image={'yes' if has_image else 'no'})...")
 
-    today = datetime.now(timezone.utc).strftime("%B %d, %Y")
-    year = datetime.now(timezone.utc).year
-    prompt = ANALYSIS_PROMPT.format(content=content, today=today, year=year)
-    system_msg = (
-        f"You are a fact-checking AI. Today's date is {today}. "
-        "For any claim about current political office-holders or recent events, you MUST "
-        "trust fresh web search results over your training data, which is older than today. "
-        "Return ONLY valid JSON. No markdown, no explanation outside the JSON."
+async def _verify_facts(content: str, today: str, year: int) -> tuple[dict | None, dict | None, str, str]:
+    """Run TWO independent verifiers in parallel. Returns
+    (parsed_a, parsed_b, raw_a, raw_b)."""
+    prompt = VERIFY_PROMPT.format(content=content, today=today, year=year)
+
+    # Primary pair: Google grounded + Perplexity web.
+    task_a = _verify_with_model("gemini-search-fast", prompt, 35.0, "A:gemini-search")
+    task_b = _verify_with_model("perplexity-fast", prompt, 35.0, "B:perplexity-fast")
+
+    (a_parsed, a_raw), (b_parsed, b_raw) = await asyncio.gather(task_a, task_b)
+
+    # Fallbacks if either one came back empty.
+    if not a_parsed:
+        logger.info("[Verify] A failed — falling back to gemini-search")
+        a_parsed, a_raw = await _verify_with_model("gemini-search", prompt, 40.0, "A-fb:gemini-search")
+    if not b_parsed:
+        logger.info("[Verify] B failed — falling back to perplexity-reasoning")
+        b_parsed, b_raw = await _verify_with_model("perplexity-reasoning", prompt, 45.0, "B-fb:perplexity-reasoning")
+
+    # Last-ditch: if BOTH still empty, try perplexity-deep solo.
+    if not a_parsed and not b_parsed:
+        logger.warning("[Verify] Both verifiers empty — trying perplexity-deep")
+        a_parsed, a_raw = await _verify_with_model("perplexity-deep", prompt, 60.0, "last-resort")
+
+    return a_parsed, b_parsed, a_raw, b_raw
+
+
+async def _score_with_evidence(
+    content: str,
+    evidence_a: str,
+    evidence_b: str,
+    today: str,
+    image_url: str | None,
+) -> tuple[dict | None, str]:
+    """Run the scoring pass (no web search needed)."""
+    client = get_pollinations_client()
+    prompt = SCORE_PROMPT.format(
+        content=content, evidence_a=evidence_a, evidence_b=evidence_b, today=today
     )
 
-    def _build_messages(use_vision: bool) -> list[dict]:
-        """Build messages — multimodal when vision is needed."""
+    def _msgs(use_vision: bool) -> list[dict]:
         if use_vision and image_url:
             return [
-                {"role": "system", "content": system_msg},
+                {"role": "system", "content": f"Today is {today}. Return ONLY JSON."},
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": prompt + "\n\nAn image is attached. Examine it carefully — describe what you see, look for manipulation cues (deepfake artifacts, inconsistent lighting, edited text overlays), and incorporate findings into image_authenticity (and content_consistency if claims relate to the image). If the image contains text, extract and analyze that text too."},
+                        {
+                            "type": "text",
+                            "text": prompt
+                            + "\n\nAn image is attached. Examine it for "
+                            "manipulation cues (deepfake artifacts, edited "
+                            "text overlays, inconsistent lighting). "
+                            "Incorporate findings into image_authenticity.",
+                        },
                         {"type": "image_url", "image_url": {"url": image_url}},
                     ],
                 },
             ]
         return [
-            {"role": "system", "content": system_msg},
+            {"role": "system", "content": f"Today is {today}. Return ONLY JSON, no prose."},
             {"role": "user", "content": prompt},
         ]
 
-    raw_response = ""
-    if has_image:
-        # Vision path: perplexity-reasoning has no vision → use openai-large first
-        model_used = "openai-large-vision"
-        cascade = [
-            ("openai-large", 50.0, "openai-large-vision", True),
-            ("openai", 40.0, "openai-vision", True),
-            ("mistral", 30.0, "mistral-fallback", False),
+    # Cascade: openai-large (reasoning, 1M ctx) → gpt-5.5 → gemini-3.5-flash
+    has_image = bool(image_url)
+    cascade = (
+        [
+            ("openai-large", 45.0, True, "openai-large-vision"),
+            ("gemini-3.5-flash", 35.0, True, "gemini-3.5-flash-vision"),
+            ("openai", 30.0, True, "openai-vision"),
         ]
-    else:
-        # Text path: perplexity-reasoning (web search) → mistral → openai-large
-        model_used = "perplexity-reasoning"
-        cascade = [
-            ("perplexity-reasoning", 50.0, "perplexity-reasoning", False),
-            ("mistral", 25.0, "mistral-fallback", False),
-            ("openai-large", 30.0, "openai-large-fallback", False),
+        if has_image
+        else [
+            ("openai-large", 40.0, False, "openai-large"),
+            ("gpt-5.5", 35.0, False, "gpt-5.5"),
+            ("gemini-3.5-flash", 30.0, False, "gemini-3.5-flash"),
         ]
+    )
 
     last_err: Exception | None = None
-    for fb_model, fb_timeout, fb_label, use_vision in cascade:
+    for model, to, vision, label in cascade:
         try:
-            raw_response = await client.chat(
-                model=fb_model,
-                messages=_build_messages(use_vision),
-                temperature=0.1 if fb_label.startswith("perplexity") else 0.2,
-                timeout=fb_timeout,
+            raw = await client.chat(
+                model=model,
+                messages=_msgs(vision),
+                temperature=0.2,
+                timeout=to,
                 max_retries=1,
             )
-            model_used = fb_label
-            last_err = None
-            break
-        except Exception as fb_e:
-            logger.warning(f"[Scoring] {fb_model} failed ({fb_e}); trying next")
-            last_err = fb_e
+            parsed = _extract_json(raw)
+            if parsed:
+                logger.info(f"[Score] {model} parsed OK ({len(raw)} chars)")
+                return parsed, label
+            else:
+                logger.warning(f"[Score] {model} returned unparseable output ({len(raw)} chars); trying next")
+        except Exception as e:
+            logger.warning(f"[Score] {model} failed ({type(e).__name__}: {e}); trying next")
+            last_err = e
             continue
-    if last_err is not None:
-        logger.error(f"[Scoring] All models failed: {last_err}")
-        return _error_response(f"All models failed: {last_err}", start_time)
 
-    step1_time = time.time() - start_time
-    logger.info(f"[Scoring] Step 1 complete in {step1_time:.1f}s, response length={len(raw_response)}")
+    logger.error(f"[Score] All scoring models failed: {last_err}")
+    return None, "scoring-failed"
 
-    # Parse the JSON response
-    analysis = _extract_json(raw_response)
-    if not analysis:
-        logger.error(f"[Scoring] Failed to parse JSON from perplexity response: {raw_response[:500]}")
-        return _error_response("Failed to parse AI response", start_time)
 
-    # ─── Extract pillar scores ───
-    pillar_scores_raw = analysis.get("pillar_scores", {})
+async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeResponse:
+    """Verifier-first 2-pass analysis.
+
+    Pass 1: Run two web-grounded verifiers in parallel (gemini-search-fast +
+    perplexity-fast). Each returns a JSON of claims+verdicts+sources.
+
+    Pass 2: Feed both verifier outputs into a scoring-only call (openai-large,
+    no web search needed). Returns 6 pillar scores + bilingual summary.
+    """
+    start_time = time.time()
+    today = datetime.now(timezone.utc).strftime("%B %d, %Y")
+    year = datetime.now(timezone.utc).year
+
+    logger.info(f"[Scoring] === Verifier-first analysis START (image={'yes' if image_url else 'no'}) ===")
+
+    # ───── PASS 1: Verify ─────
+    pass1_t = time.time()
+    a_parsed, b_parsed, a_raw, b_raw = await _verify_facts(content, today, year)
+    logger.info(f"[Scoring] Pass 1 (verify) done in {time.time() - pass1_t:.1f}s")
+
+    if not a_parsed and not b_parsed:
+        return _error_response("All verifiers failed — could not retrieve current evidence", start_time)
+
+    evidence_a = _stringify_verifier_output(a_parsed, a_raw)
+    evidence_b = _stringify_verifier_output(b_parsed, b_raw)
+
+    # ───── PASS 2: Score ─────
+    pass2_t = time.time()
+    scored, model_used = await _score_with_evidence(content, evidence_a, evidence_b, today, image_url)
+    logger.info(f"[Scoring] Pass 2 (score) done in {time.time() - pass2_t:.1f}s")
+
+    if not scored:
+        # Fall back to a simple "translate verifier overall → score" path.
+        logger.warning("[Scoring] Scoring step failed — synthesizing from verifier evidence")
+        scored = _synthesize_from_verifiers(a_parsed, b_parsed)
+        model_used = "verifier-synth"
+
+    # ───── Build response ─────
     pillar_results: list[PillarScore] = []
-
     for pillar_key, weight in PILLAR_WEIGHTS.items():
-        pillar_data = pillar_scores_raw.get(pillar_key, {})
-        score = float(pillar_data.get("score", 50)) if isinstance(pillar_data, dict) else 50.0
-        reason = pillar_data.get("reason", "No analysis available") if isinstance(pillar_data, dict) else "No analysis available"
-
-        # Clamp score to 0-100
+        pdata = scored.get("pillar_scores", {}).get(pillar_key, {}) if scored else {}
+        score = float(pdata.get("score", 50)) if isinstance(pdata, dict) else 50.0
+        reason = pdata.get("reason", "No analysis available") if isinstance(pdata, dict) else "No analysis available"
         score = max(0.0, min(100.0, score))
+        pillar_results.append(
+            PillarScore(
+                name=pillar_key.replace("_", " ").title(),
+                name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
+                score=score,
+                weight=weight,
+                explanation_en=reason,
+                explanation_bn=reason,
+                evidence=_collect_evidence(a_parsed, b_parsed, scored),
+                model_used=model_used,
+                active=True,
+            )
+        )
 
-        pillar_results.append(PillarScore(
-            name=pillar_key.replace("_", " ").title(),
-            name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
-            score=score,
-            weight=weight,
-            explanation_en=reason,
-            explanation_bn=reason,  # Will be overridden by summary step if needed
-            evidence=_extract_evidence(analysis),
-            model_used=model_used,
-            active=True,
-        ))
-
-    # Calculate weighted trust score
     trust_score = sum(p.score * p.weight for p in pillar_results)
     trust_score = round(max(0.0, min(100.0, trust_score)), 1)
-
-    # Get verdict
     verdict_en, verdict_bn = get_verdict(trust_score)
 
-    # Override verdict with AI's overall_verdict if it's more specific
-    ai_verdict = analysis.get("overall_verdict", "")
+    ai_verdict = (scored or {}).get("overall_verdict", "")
     if ai_verdict:
         verdict_en, verdict_bn = _map_ai_verdict(ai_verdict, trust_score)
 
-    # ─── Step 2: gemini-2.5-flash summary (fast) ───
-    explanation_en = analysis.get("explanation_en", "")
-    explanation_bn = analysis.get("explanation_bn", "")
+    explanation_en = _scrub_explanation((scored or {}).get("explanation_en", ""), is_bn=False)
+    explanation_bn = _scrub_explanation((scored or {}).get("explanation_bn", ""), is_bn=True)
 
-    if not explanation_en or not explanation_bn:
-        try:
-            logger.info("[Scoring] Step 2: gemini summary...")
-            summary_response = await client.chat(
-                model="gemini-2.5-flash",
-                messages=[
-                    {"role": "system", "content": "Return only valid JSON. Be concise and factual."},
-                    {"role": "user", "content": SUMMARY_PROMPT.format(
-                        analysis_json=json.dumps(analysis, ensure_ascii=False)[:3000]
-                    )},
-                ],
-                temperature=0.3,
-                timeout=10.0,
-            )
-            summary = _extract_json(summary_response)
-            if summary:
-                explanation_en = summary.get("explanation_en", explanation_en)
-                explanation_bn = summary.get("explanation_bn", explanation_bn)
-        except Exception as e:
-            logger.warning(f"[Scoring] Summary generation failed (using perplexity output): {e}")
+    if not explanation_en:
+        explanation_en = f"Trust score: {trust_score}/100. {verdict_en}."
+    if not explanation_bn:
+        explanation_bn = f"বিশ্বাসযোগ্যতা স্কোর: {trust_score}/১০০। {verdict_bn}।"
 
-    # Confidence based on claims verified
-    claims = analysis.get("claims", [])
-    verified_claims = [c for c in claims if c.get("verdict") in ("true", "false", "misleading")]
-    confidence = min(1.0, (len(verified_claims) + 1) / max(len(claims), 1))
+    # Confidence: fraction of claims that got a definitive verdict.
+    all_claims = (a_parsed or {}).get("claims", []) + (b_parsed or {}).get("claims", [])
+    verified = [
+        c for c in all_claims
+        if isinstance(c, dict) and c.get("verdict") in ("true", "false", "misleading")
+    ]
+    confidence = min(1.0, (len(verified) + 1) / max(len(all_claims), 1))
 
     processing_time_ms = int((time.time() - start_time) * 1000)
-    logger.info(f"[Scoring] Complete in {processing_time_ms}ms. Score={trust_score}, Verdict={verdict_en}")
-
-    # Scrub leaked enum tags / "Verdict:" prefixes from LLM-generated text.
-    explanation_en = _scrub_explanation(explanation_en, is_bn=False)
-    explanation_bn = _scrub_explanation(explanation_bn, is_bn=True)
+    logger.info(
+        f"[Scoring] === DONE in {processing_time_ms}ms. "
+        f"score={trust_score} verdict={verdict_en} model={model_used} ==="
+    )
 
     return AnalyzeResponse(
         trust_score=trust_score,
         verdict=verdict_en,
         verdict_bn=verdict_bn,
         pillars=pillar_results,
-        explanation_en=explanation_en or f"Trust score: {trust_score}/100. {verdict_en}.",
-        explanation_bn=explanation_bn or f"বিশ্বাসযোগ্যতা স্কোর: {trust_score}/১০০। {verdict_bn}।",
+        explanation_en=explanation_en,
+        explanation_bn=explanation_bn,
         confidence=round(confidence, 2),
         cached=False,
         processing_time_ms=processing_time_ms,
     )
 
 
-def _extract_evidence(analysis: dict) -> list[str]:
-    """Extract evidence URLs/reasons from claims."""
-    evidence = []
-    for claim in analysis.get("claims", [])[:5]:
-        if isinstance(claim, dict):
-            ev = claim.get("evidence", "")
-            if ev:
-                evidence.append(f"[{claim.get('verdict', '?')}] {claim.get('claim', '')[:80]} — {ev[:100]}")
-    return evidence
+def _collect_evidence(a: dict | None, b: dict | None, scored: dict | None) -> list[str]:
+    """Collect human-readable evidence lines from both verifiers."""
+    out = []
+    seen = set()
+
+    def push(claim_obj: dict, src: str):
+        if not isinstance(claim_obj, dict):
+            return
+        key = (claim_obj.get("claim", "")[:60], claim_obj.get("source_url", "")[:60])
+        if key in seen or not key[0]:
+            return
+        seen.add(key)
+        line = (
+            f"[{claim_obj.get('verdict', '?')}] "
+            f"{claim_obj.get('claim', '')[:120]} — "
+            f"{claim_obj.get('source_outlet', '?')} "
+            f"({claim_obj.get('source_date', '?')}): "
+            f"{claim_obj.get('source_url', '')[:120]}"
+        )
+        out.append(f"{src}: {line}")
+
+    for c in (a or {}).get("claims", [])[:5]:
+        push(c, "Google")
+    for c in (b or {}).get("claims", [])[:5]:
+        push(c, "Perplexity")
+
+    # If scoring step gave us evidence_urls, append them too (deduped).
+    for url in (scored or {}).get("evidence_urls", [])[:3] or []:
+        if isinstance(url, str) and url and url not in " ".join(out):
+            out.append(f"Cited: {url}")
+
+    return out[:8]
+
+
+def _synthesize_from_verifiers(a: dict | None, b: dict | None) -> dict:
+    """Build a minimal scored dict from verifier outputs when the scoring
+    pass fails entirely. Trust the verifiers' overall verdicts."""
+    overall = (a or {}).get("overall") or (b or {}).get("overall") or "unverifiable"
+    score_map = {
+        "true": 90, "mostly_true": 75, "misleading": 45,
+        "mostly_false": 25, "false": 10, "unverifiable": 30,
+    }
+    base = score_map.get(overall, 50)
+
+    key_finding = (
+        (a or {}).get("key_finding")
+        or (b or {}).get("key_finding")
+        or "Verifiers ran but the scoring step failed."
+    )
+
+    return {
+        "pillar_scores": {
+            "content_consistency": {"score": base, "reason": key_finding},
+            "source_reputation": {"score": 40, "reason": "Source could not be evaluated by scoring step."},
+            "language_analysis": {"score": 50, "reason": "Language analysis unavailable in fallback path."},
+            "bengali_context": {"score": 50, "reason": "Context analysis unavailable in fallback path."},
+            "image_authenticity": {"score": 50, "reason": "Not evaluated."},
+            "author_network": {"score": 50, "reason": "Not evaluated."},
+        },
+        "overall_verdict": overall,
+        "explanation_en": key_finding,
+        "explanation_bn": key_finding,  # let scrubber pass through; better than empty.
+        "evidence_urls": [],
+    }
 
 
 def _map_ai_verdict(ai_verdict: str, score: float) -> tuple[str, str]:
-    """Map AI's overall_verdict string to display verdicts."""
     mapping = {
         "true": ("True / Verified", "সত্য / যাচাইকৃত"),
         "mostly_true": ("Mostly True", "অধিকাংশ সত্য"),
@@ -442,23 +628,22 @@ def _map_ai_verdict(ai_verdict: str, score: float) -> tuple[str, str]:
 
 
 def _error_response(error_msg: str, start_time: float) -> AnalyzeResponse:
-    """Generate a minimal error response when analysis fails."""
     processing_time_ms = int((time.time() - start_time) * 1000)
-
     pillar_results = []
     for pillar_key, weight in PILLAR_WEIGHTS.items():
-        pillar_results.append(PillarScore(
-            name=pillar_key.replace("_", " ").title(),
-            name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
-            score=50.0,
-            weight=weight,
-            explanation_en=f"Analysis failed: {error_msg[:100]}",
-            explanation_bn="বিশ্লেষণে ত্রুটি হয়েছে।",
-            evidence=[],
-            model_used="none",
-            active=False,
-        ))
-
+        pillar_results.append(
+            PillarScore(
+                name=pillar_key.replace("_", " ").title(),
+                name_bn=PILLAR_NAMES_BN.get(pillar_key, pillar_key),
+                score=50.0,
+                weight=weight,
+                explanation_en=f"Analysis failed: {error_msg[:120]}",
+                explanation_bn="বিশ্লেষণে ত্রুটি হয়েছে।",
+                evidence=[],
+                model_used="none",
+                active=False,
+            )
+        )
     return AnalyzeResponse(
         trust_score=50.0,
         verdict="Analysis Failed",
