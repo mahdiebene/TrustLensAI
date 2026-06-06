@@ -18,6 +18,7 @@ Flow:
 import hashlib
 import logging
 import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from slowapi import Limiter
@@ -89,8 +90,14 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
     content = body.content.strip()
 
     # ─── Cache check FIRST ───
+    # `v2` namespace = bumped after the recency-aware prompt rewrite, so old
+    # cached "Tarique=false" type answers (built before the date-injection fix)
+    # are invalidated. Date in the key ensures political claims re-verify each
+    # day — facts about current office-holders shouldn't be cached for 24h
+    # across days when the underlying world can change overnight.
     content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
-    cache_key = f"trustlens:analysis:{content_hash}"
+    today_key = datetime.now(timezone.utc).strftime("%Y%m%d")
+    cache_key = f"trustlens:analysis:v2:{today_key}:{content_hash}"
     cache = get_cache_service()
     cached_result = await cache.get_cached(cache_key)
     if cached_result:

@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timezone
 
 from app.models.schemas import AnalyzeResponse, PillarScore
 from app.services.pollinations import get_pollinations_client
@@ -46,6 +47,15 @@ VERDICTS = [
 
 ANALYSIS_PROMPT = """You are TrustLens, a fact-checking AI for Bengali / Bangladeshi social media.
 
+═══ TODAY'S DATE: {today} ═══
+This is the REAL current date. Your training data is older than this. For ANY claim
+about a current office-holder (Prime Minister, President, Chief Adviser, ministers,
+party heads, election winners, etc.), about an ongoing event, or about anything
+time-sensitive, you MUST trust fresh web search results from {year} over your
+training knowledge. Bangladesh has had major political upheaval since 2024 — the
+person you remember as PM may no longer hold that office. ALWAYS verify with a
+current web search before scoring a political claim as false.
+
 The content below has ALREADY BEEN EXTRACTED for you (post text, author, source). Do NOT
 say you cannot read URLs — work with the text provided. Use web search to verify the
 factual claims you find in the text.
@@ -58,10 +68,14 @@ CONTENT TO ANALYZE:
 WHAT TO DO:
 1. Read the extracted text above carefully.
 2. List every concrete factual claim (who/what/where/when, numbers, named people, events).
-3. For each claim, run a web search and report what you found (confirms, contradicts, or no result).
-4. Detect manipulation cues: emotional/inflammatory words, fear-mongering, urgency, undisclosed bias.
-5. Apply the Bangladesh context: known misinformation patterns, partisan accounts, communal framing.
-6. Score the 6 pillars 0–100 using the rubric below — and DO NOT default to 50 unless you genuinely have no signal at all.
+3. For each claim, run a CURRENT web search (year {year}) and report what you found.
+   For political offices, search "Bangladesh Prime Minister {year}" or "Bangladesh
+   current government {year}" — DO NOT rely on what you remember from training.
+4. If your training knowledge contradicts fresh search results, TRUST THE SEARCH RESULTS.
+   Cite the source URL and its date.
+5. Detect manipulation cues: emotional/inflammatory words, fear-mongering, urgency, undisclosed bias.
+6. Apply the Bangladesh context: known misinformation patterns, partisan accounts, communal framing.
+7. Score the 6 pillars 0–100 using the rubric below — and DO NOT default to 50 unless you genuinely have no signal at all.
 
 ═══ SCORING RUBRIC (use these anchors, don't hedge at 50) ═══
 
@@ -99,6 +113,10 @@ Per-pillar guidance:
   • If the claim is unverifiable due to lack of sources, that itself is a NEGATIVE signal for content_consistency (score it 25–40, not 50).
   • Do NOT invent sources. If a search returned nothing, say so.
   • Bengali content is fine — analyze it directly.
+  • RECENCY OVERRIDE: If your search returns articles dated within the last 12 months
+    that contradict your training-data memory, the SEARCH WINS. Especially for current
+    office-holders, election results, and ongoing events. Never mark a current-office
+    claim as "false" based on training data alone — only based on a current search.
 
 ═══ BENGALI WRITING RULES (very important) ═══
   • `explanation_bn` MUST be natural, fluent Bengali — like a Bangladeshi journalist would write.
@@ -237,8 +255,15 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
     has_image = bool(image_url)
     logger.info(f"[Scoring] Step 1: analysis starting (image={'yes' if has_image else 'no'})...")
 
-    prompt = ANALYSIS_PROMPT.format(content=content)
-    system_msg = "You are a fact-checking AI. Return ONLY valid JSON. No markdown, no explanation outside the JSON."
+    today = datetime.now(timezone.utc).strftime("%B %d, %Y")
+    year = datetime.now(timezone.utc).year
+    prompt = ANALYSIS_PROMPT.format(content=content, today=today, year=year)
+    system_msg = (
+        f"You are a fact-checking AI. Today's date is {today}. "
+        "For any claim about current political office-holders or recent events, you MUST "
+        "trust fresh web search results over your training data, which is older than today. "
+        "Return ONLY valid JSON. No markdown, no explanation outside the JSON."
+    )
 
     def _build_messages(use_vision: bool) -> list[dict]:
         """Build messages — multimodal when vision is needed."""
