@@ -382,7 +382,7 @@ function RecentScanRow({
   const verdictTone = verdictToneFor(item.verdictEn);
   const verdictLabel = language === "bn" ? item.verdictBn : item.verdictEn;
   return (
-    <li className="card flex items-center gap-3 px-3.5 py-2.5">
+    <li className="card flex items-center gap-2.5 px-3 py-2.5 min-w-0 overflow-hidden">
       <span className="h-7 w-7 shrink-0 rounded-md bg-surface-2 text-text-secondary flex items-center justify-center text-[10px] uppercase tracking-[0.06em] font-semibold">
         {item.source === "link" ? "URL" : "Aa"}
       </span>
@@ -390,7 +390,7 @@ function RecentScanRow({
         {item.excerpt}
       </p>
       <span
-        className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-medium tracking-[-0.005em] ${
+        className={`shrink-0 max-w-[40%] truncate px-2 py-1 rounded-md text-[11px] font-medium tracking-[-0.005em] ${
           verdictTone === "high"
             ? "bg-trust-high/12 text-trust-high"
             : verdictTone === "low"
