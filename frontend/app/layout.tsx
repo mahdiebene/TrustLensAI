@@ -39,13 +39,16 @@ export const metadata: Metadata = {
   },
 };
 
-// Inline script to prevent flash of wrong theme
+// Inline script to prevent flash of wrong theme.
+// Default = light. Only "light" or "dark" is honored; legacy "system" values
+// are migrated to light on next load.
 const themeScript = `
 (function() {
   try {
-    var theme = localStorage.getItem('trustlens-theme') || 'system';
-    var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.classList.toggle('dark', isDark);
+    var saved = localStorage.getItem('trustlens-theme');
+    var theme = (saved === 'dark' || saved === 'light') ? saved : 'light';
+    if (saved !== theme) localStorage.setItem('trustlens-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   } catch(e) {}
 })();
 `;

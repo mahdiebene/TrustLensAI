@@ -76,19 +76,37 @@ export default function HomePage() {
        */}
       <section id="verify" className="flex flex-col gap-5 md:grid md:grid-cols-[1.05fr_0.95fr] md:gap-10 md:items-start md:pt-2">
         {/* ── Hero text (mobile: order-1, compact) ── */}
-        <div className="flex flex-col gap-3.5 md:gap-6 order-1 md:order-none">
-          <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
-            <Pill tone="accent">{t.sixSignalBadge}</Pill>
-            <Pill tone="surface">{t.bilingualBadge}</Pill>
-            <Pill tone="surface" className="hidden sm:inline-flex">{t.realtimeBadge}</Pill>
-          </div>
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col gap-3.5 md:gap-6 order-1 md:order-none"
+        >
+          <motion.div
+            initial="hidden"
+            animate="show"
+            variants={{
+              hidden: {},
+              show: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
+            }}
+            className="flex flex-wrap items-center gap-1.5 md:gap-2"
+          >
+            <motion.div variants={pillVariant}><Pill tone="accent">{t.sixSignalBadge}</Pill></motion.div>
+            <motion.div variants={pillVariant}><Pill tone="surface">{t.bilingualBadge}</Pill></motion.div>
+            <motion.div variants={pillVariant} className="hidden sm:inline-flex">
+              <Pill tone="surface">{t.realtimeBadge}</Pill>
+            </motion.div>
+          </motion.div>
 
-          <h2
+          <motion.h2
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
             lang={language}
             className="text-[clamp(1.7rem,6.4vw,3.6rem)] leading-[1.08] md:leading-[1.05] font-semibold tracking-[-0.02em] text-text-primary font-bengali"
           >
             {t.tagline}
-          </h2>
+          </motion.h2>
 
           {/* Blurb hidden on mobile to keep input above the fold; visible md+ */}
           <p className="hidden md:block text-[15px] md:text-[16px] leading-[1.7] text-text-secondary max-w-prose font-bengali">
@@ -101,10 +119,15 @@ export default function HomePage() {
             <FeatureStat title={t.statsBilingualTitle} desc={t.statsBilingualDesc} />
             <FeatureStat title={t.statsExplainableTitle} desc={t.statsExplainableDesc} />
           </div>
-        </div>
+        </motion.div>
 
         {/* ── Input card (mobile: order-2, immediately visible after headline) ── */}
-        <div className="section-surface p-4 md:p-5 lg:p-6 flex flex-col gap-3.5 md:gap-4 self-start w-full order-2 md:order-none">
+        <motion.div
+          initial={{ opacity: 0, y: 16, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.45, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          className="section-surface p-4 md:p-5 lg:p-6 flex flex-col gap-3.5 md:gap-4 self-start w-full order-2 md:order-none"
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
@@ -122,7 +145,7 @@ export default function HomePage() {
           <p className="text-[11.5px] md:text-[12px] text-text-tertiary leading-[1.55] pt-2.5 border-t border-surface-3/40">
             {t.pastePrompt}
           </p>
-        </div>
+        </motion.div>
 
         {/* ── Blurb (mobile-only, AFTER the input — secondary context) ── */}
         <p className="md:hidden order-3 text-[14px] leading-[1.7] text-text-secondary font-bengali -mt-1">
@@ -238,6 +261,11 @@ export default function HomePage() {
 }
 
 /* ─────────── Sub-components ─────────── */
+
+const pillVariant = {
+  hidden: { opacity: 0, y: 6, scale: 0.96 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } },
+};
 
 function Pill({
   children,

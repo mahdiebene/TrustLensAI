@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useI18n } from "@/lib/useI18n";
 
 /**
@@ -48,19 +49,26 @@ export function MobileBottomNav() {
           const isActive = active === item.id;
           return (
             <li key={item.id} className="flex-1">
-              <a
+              <motion.a
                 href={`#${item.id}`}
-                className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-colors duration-150 ${
-                  isActive
-                    ? "text-accent-blue bg-accent-blue/10"
-                    : "text-text-secondary hover:text-text-primary"
+                whileTap={{ scale: 0.92 }}
+                transition={{ type: "spring", stiffness: 380, damping: 26 }}
+                className={`relative flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-colors duration-150 ${
+                  isActive ? "text-accent-blue" : "text-text-secondary hover:text-text-primary"
                 }`}
               >
-                <span className="h-5 w-5">{item.icon}</span>
-                <span className="text-[10px] leading-none font-medium tracking-[-0.005em] truncate max-w-full">
+                {isActive && (
+                  <motion.span
+                    layoutId="bottomNavActive"
+                    className="absolute inset-0 rounded-xl bg-accent-blue/10"
+                    transition={{ type: "spring", stiffness: 360, damping: 30 }}
+                  />
+                )}
+                <span className="relative h-5 w-5">{item.icon}</span>
+                <span className="relative text-[10px] leading-none font-medium tracking-[-0.005em] truncate max-w-full">
                   {item.label}
                 </span>
-              </a>
+              </motion.a>
             </li>
           );
         })}

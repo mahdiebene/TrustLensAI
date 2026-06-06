@@ -27,7 +27,7 @@ interface AnalysisResult {
   original_url?: string;
 }
 
-type Theme = "light" | "dark" | "system";
+type Theme = "light" | "dark";
 
 interface AppState {
   language: "bn" | "en";
@@ -47,7 +47,7 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   language: "bn",
   setLanguage: (lang) => set({ language: lang }),
-  theme: "system",
+  theme: "light",
   setTheme: (theme) => set({ theme }),
   isAnalyzing: false,
   setIsAnalyzing: (v) => set({ isAnalyzing: v }),

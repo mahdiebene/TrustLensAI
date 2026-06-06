@@ -298,11 +298,14 @@ export function InputForm() {
 
       {/* Submit row */}
       <div className="flex items-center gap-3 pt-1">
-        <button
+        <motion.button
           type="button"
           onClick={handleSubmit}
           disabled={!canSubmit}
-          className="flex-1 sm:flex-initial sm:px-7 py-3 rounded-xl font-medium text-[14px] tracking-[-0.005em] bg-accent-blue text-white shadow-[0_1px_2px_rgba(15,23,42,0.08)] hover:bg-[color-mix(in_srgb,var(--accent-blue)_92%,white)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent-blue transition-all duration-150 active:scale-[0.99] flex items-center justify-center gap-2"
+          whileTap={canSubmit ? { scale: 0.98 } : undefined}
+          whileHover={canSubmit ? { y: -1 } : undefined}
+          transition={{ type: "spring", stiffness: 400, damping: 26 }}
+          className="btn-primary flex-1 sm:flex-initial sm:px-7 py-3 font-medium text-[14px] tracking-[-0.005em] flex items-center justify-center gap-2"
         >
           {submitting ? (
             <>
@@ -312,11 +315,15 @@ export function InputForm() {
           ) : (
             <span className="font-bengali">{t.verifyTrustworthiness}</span>
           )}
-        </button>
+        </motion.button>
 
         {!submitting && (text || imageDataUrl) && (
-          <button
+          <motion.button
             type="button"
+            initial={{ opacity: 0, x: -6 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -6 }}
+            whileTap={{ scale: 0.96 }}
             onClick={() => {
               setText("");
               setImageDataUrl("");
@@ -327,7 +334,7 @@ export function InputForm() {
             className="px-3.5 py-3 rounded-xl text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors duration-150"
           >
             {t.clear}
-          </button>
+          </motion.button>
         )}
       </div>
 
