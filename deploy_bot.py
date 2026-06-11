@@ -12,16 +12,30 @@ import sys
 import paramiko
 
 
+def _safe_print(text: str) -> None:
+    """Print text without crashing on Windows cp1252 consoles.
+
+    SSH output (git log, docker logs) can contain Unicode like '→' or Bengali
+    that the default Windows console encoding can't represent. Re-encode to the
+    stdout encoding with replacement so the deploy never dies on a print().
+    """
+    enc = (sys.stdout.encoding or "utf-8")
+    sys.stdout.buffer.write(text.encode(enc, errors="replace"))
+    sys.stdout.buffer.write(b"\n")
+    sys.stdout.flush()
+
+
 def run(client, cmd, timeout=300):
-    print(f"\n$ {cmd}")
+    _safe_print(f"\n$ {cmd}")
     stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     if out.strip():
-        print(out)
+        _safe_print(out)
     if err.strip():
-        print("[stderr]", err)
+        _safe_print("[stderr] " + err)
     return out, err
+
 
 
 def main():
