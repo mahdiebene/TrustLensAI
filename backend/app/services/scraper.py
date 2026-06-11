@@ -82,6 +82,34 @@ def is_social_media_url(url: str) -> bool:
     return any(domain in parsed.netloc for domain in social_domains)
 
 
+def is_instagram_url(url: str) -> bool:
+    """Check if URL is from Instagram."""
+    parsed = urlparse(url)
+    return "instagram.com" in parsed.netloc
+
+
+def is_login_walled_social_url(url: str) -> bool:
+    """Social platforms that hide post content behind a login wall.
+
+    For these, a failed scrape must NOT be handed to the LLM with a
+    "browse this URL" instruction — the LLM cannot actually fetch the post
+    and will *fabricate* a verdict (e.g. "this link is invalid/deleted").
+    Instead we show the user the scrape-failed fallback card so they can
+    paste the text / upload a screenshot.
+    """
+    parsed = urlparse(url)
+    walled = [
+        "facebook.com", "fb.com", "web.facebook.com", "m.facebook.com",
+        "instagram.com",
+        "twitter.com", "x.com",
+        "tiktok.com",
+        "threads.net",
+        "linkedin.com",
+    ]
+    return any(domain in parsed.netloc for domain in walled)
+
+
+
 def _extract_og_tags(soup: BeautifulSoup) -> dict:
     """Extract Open Graph and Twitter Card meta tags from BeautifulSoup."""
     tags = {}
@@ -494,6 +522,82 @@ async def scrape_facebook_url(url: str) -> dict:
     return result
 
 
+async def scrape_instagram_url(url: str) -> dict:
+    """Scrape an Instagram post/reel.
+
+    Instagram hides content behind a login wall for bots, so a plain httpx
+    fetch returns the app shell with no post text. Strategy:
+      1. Jina Reader (can read some PUBLIC posts).
+      2. Direct OG-tag fetch (public posts expose og:title / og:description).
+    On total failure we return a structured failure_reason so the API layer
+    shows the scrape-failed fallback card — instead of letting the LLM
+    fabricate a verdict about a link it cannot actually open.
+    """
+    result = {
+        "text": "",
+        "title": "",
+        "author": "",
+        "source_domain": "instagram.com",
+        "success": False,
+        "image_url": None,
+        "original_url": url,
+        "failure_reason": "",
+        "failure_reason_bn": "",
+    }
+
+    # Step 1: Jina Reader
+    jina = await _scrape_via_jina(url)
+    if jina["success"] and jina["text"]:
+        result["text"] = jina["text"]
+        result["title"] = jina["title"]
+        result["author"] = jina["author"]
+        result["image_url"] = jina["image_url"]
+        result["success"] = True
+        return result
+
+    # Step 2: Direct OG tags (public posts expose them)
+    try:
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+            r = await client.get(url, headers=HEADERS)
+            if r.status_code == 200 and r.text:
+                soup = BeautifulSoup(r.text, "html.parser")
+                og_tags = _extract_og_tags(soup)
+                title_tag = soup.find("title")
+                title = title_tag.get_text(strip=True) if title_tag else ""
+                text = _build_text_from_og(og_tags, title)
+                # IG's og:title is "Username on Instagram: ..." → use as author hint
+                if og_tags.get("og:title"):
+                    result["author"] = og_tags["og:title"].split(" on Instagram")[0].strip()
+                result["image_url"] = og_tags.get("og:image") or og_tags.get("twitter:image")
+                # Reject the generic login-wall description
+                low = text.lower()
+                login_wall = (
+                    "log in" in low and "sign up" in low and len(text) < 400
+                ) or "see photos and videos from" in low
+                if text and len(text) > 30 and not login_wall:
+                    result["text"] = text[:4000]
+                    result["title"] = title
+                    result["success"] = True
+                    logger.info(f"[Scraper] IG OG extracted {len(text)} chars")
+                    return result
+    except Exception as e:
+        logger.warning(f"[Scraper] IG direct fetch failed: {e}")
+
+    # Total failure → structured reason for fallback card
+    logger.warning(f"[Scraper] Instagram scrape failed for {url[:80]}...")
+    result["failure_reason"] = (
+        "Could not read this Instagram post automatically — Instagram requires "
+        "login to view most posts. Paste the caption text or upload a screenshot "
+        "to get a real trust score."
+    )
+    result["failure_reason_bn"] = (
+        "এই ইনস্টাগ্রাম পোস্টটি স্বয়ংক্রিয়ভাবে পড়া যায়নি — বেশিরভাগ পোস্ট দেখতে "
+        "ইনস্টাগ্রাম লগইন চায়। সঠিক ট্রাস্ট স্কোর পেতে পোস্টের ক্যাপশন পেস্ট করুন "
+        "অথবা স্ক্রিনশট আপলোড করুন।"
+    )
+    return result
+
+
 async def scrape_generic_url(url: str) -> dict:
     """Quick scrape for non-Facebook URLs using httpx + BeautifulSoup.
 
@@ -515,6 +619,11 @@ async def scrape_generic_url(url: str) -> dict:
     # Facebook URLs get special handling
     if is_facebook_url(url):
         return await scrape_facebook_url(url)
+
+    # Instagram gets its own login-wall-aware handling
+    if is_instagram_url(url):
+        return await scrape_instagram_url(url)
+
 
     try:
         parsed = urlparse(url)

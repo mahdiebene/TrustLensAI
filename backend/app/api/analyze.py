@@ -27,7 +27,13 @@ from slowapi.util import get_remote_address
 from app.models.schemas import AnalyzeRequest, AnalyzeResponse, PillarScore
 from app.core.scoring import run_analysis, PILLAR_WEIGHTS, PILLAR_NAMES_BN
 from app.services.redis_client import get_cache_service
-from app.services.scraper import is_url, is_facebook_url, scrape_url
+from app.services.scraper import (
+    is_url,
+    is_facebook_url,
+    is_login_walled_social_url,
+    scrape_url,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -138,25 +144,33 @@ async def analyze_content(request: Request, body: AnalyzeRequest) -> AnalyzeResp
             )
         else:
             # Scrape failed
-            if is_facebook_url(content):
-                # User wants: show reason + ask for text/image input.
+            if is_login_walled_social_url(content):
+                # Facebook / Instagram / X / TikTok etc. hide content behind a
+                # login wall. The LLM CANNOT actually fetch these posts, so if we
+                # hand it the bare URL it will *fabricate* a verdict (e.g. "this
+                # link is invalid/deleted") about a link that is actually live —
+                # exactly the bug we're fixing. Instead, show the scrape-failed
+                # fallback card so the user can paste text / upload a screenshot.
                 # No AI call — return immediately with structured signal.
                 reason_en = scraped.get("failure_reason") or (
-                    "Could not retrieve this Facebook post — it may be private, "
-                    "in a closed group, deleted, or restricted to logged-in users."
+                    "Could not retrieve this social media post — it may be private, "
+                    "deleted, or restricted to logged-in users. Paste the post text "
+                    "or upload a screenshot to get a real trust score."
                 )
                 reason_bn = scraped.get("failure_reason_bn") or (
-                    "এই ফেসবুক পোস্টটি আনতে পারিনি — সম্ভবত এটি প্রাইভেট, "
-                    "ক্লোজড গ্রুপে আছে, ডিলিট হয়েছে, অথবা লগইন ছাড়া দেখা যায় না।"
+                    "এই সোশ্যাল মিডিয়া পোস্টটি আনতে পারিনি — সম্ভবত এটি প্রাইভেট, "
+                    "ডিলিট হয়েছে, অথবা লগইন ছাড়া দেখা যায় না। সঠিক ট্রাস্ট স্কোর পেতে "
+                    "পোস্টের লেখা পেস্ট করুন অথবা স্ক্রিনশট আপলোড করুন।"
                 )
                 logger.warning(
-                    f"[Analyze] FB scrape failed → returning scrape_failed response. "
+                    f"[Analyze] Social scrape failed → returning scrape_failed response. "
                     f"Reason: {reason_en[:80]}"
                 )
                 result = _scrape_failed_response(content, reason_en, reason_bn, start_time)
                 # Don't cache this — user will retry with text/image
                 return result
             else:
+
                 # Generic URL scrape failed → let perplexity-reasoning try its own browsing
                 analysis_content = (
                     f"URL: {content}\n"

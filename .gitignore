@@ -5,6 +5,8 @@
 
 # Project docs with secrets
 CLAUDE.md
+HOW_TO_DEPLOY.md
+
 
 # VPS / deploy scripts containing credentials — never commit these
 debug_vps.py
