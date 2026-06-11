@@ -11,6 +11,8 @@
  *
  * Output:
  *   dist/trustlens-extension-v<version>.zip   (version read from manifest.json)
+ *   ../frontend/public/trustlens-extension.zip (stable name, served for direct
+ *                                               download from /get-extension)
  *
  * No external npm dependencies — uses the OS-native zip tool:
  *   - Windows: PowerShell Compress-Archive
@@ -23,6 +25,15 @@ const { execFileSync } = require("child_process");
 
 const ROOT = __dirname;
 const DIST_DIR = path.join(ROOT, "dist");
+// Stable, version-less copy the website serves for one-click download.
+const PUBLIC_ZIP = path.join(
+  ROOT,
+  "..",
+  "frontend",
+  "public",
+  "trustlens-extension.zip"
+);
+
 
 // Files/dirs that make up the shippable extension.
 const INCLUDE = ["manifest.json", "background", "content", "popup", "icons"];
@@ -103,12 +114,18 @@ function main() {
   zipDir(stageDir, outFile);
   rimraf(stageDir);
 
+  // Publish a stable-named copy the website serves for one-click download.
+  fs.mkdirSync(path.dirname(PUBLIC_ZIP), { recursive: true });
+  fs.copyFileSync(outFile, PUBLIC_ZIP);
+
   const sizeKb = (fs.statSync(outFile).size / 1024).toFixed(1);
   console.log(`\n✅ Packaged TrustLens extension v${version}`);
   console.log(`   → ${path.relative(process.cwd(), outFile)} (${sizeKb} KB)`);
+  console.log(`   → ${path.relative(process.cwd(), PUBLIC_ZIP)} (served at /trustlens-extension.zip)`);
   console.log(`\nNext steps:`);
   console.log(`   • Manual install: unzip → chrome://extensions → Load unpacked`);
   console.log(`   • Web Store: upload the .zip at https://chrome.google.com/webstore/devconsole`);
+
 }
 
 try {

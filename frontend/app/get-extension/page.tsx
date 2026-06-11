@@ -7,13 +7,14 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useStore } from "@/lib/store";
 
-const GITHUB_EXTENSION_URL =
-  process.env.NEXT_PUBLIC_CHROME_EXTENSION_URL ||
-  "https://github.com/mahdiebene/TrustLensAI/tree/main/extension";
-// Optional direct download of a packaged .zip build (set in env when published).
-const EXTENSION_ZIP_URL = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ZIP_URL || "";
+// Direct download of the packaged .zip build. Defaults to the copy bundled with
+// the site (frontend/public/trustlens-extension.zip) — env can override if the
+// build is ever hosted elsewhere (CDN / GitHub Release).
+const EXTENSION_ZIP_URL =
+  process.env.NEXT_PUBLIC_CHROME_EXTENSION_ZIP_URL || "/trustlens-extension.zip";
 // Optional Chrome Web Store listing (set when published).
 const WEB_STORE_URL = process.env.NEXT_PUBLIC_CHROME_WEB_STORE_URL || "";
+
 
 const COPY = {
   bn: {
@@ -23,17 +24,18 @@ const COPY = {
     intro:
       "যেকোনো ওয়েবপেজ বা সোশ্যাল পোস্টে সরাসরি দাবি যাচাই করুন — পেজ ছাড়াই, এক ক্লিকে।",
     storeBtn: "Chrome Web Store-এ পান",
-    zipBtn: "প্যাকেজড বিল্ড (.zip) ডাউনলোড করুন",
-    sourceBtn: "GitHub-এ সোর্স দেখুন",
+    zipBtn: "এক্সটেনশন ডাউনলোড করুন (.zip)",
     manualTitle: "ম্যানুয়াল ইনস্টলেশন (Developer Mode)",
-    note: "এক্সটেনশনটি এখনো Chrome Web Store-এ প্রকাশিত হয়নি — নিচের ধাপগুলো অনুসরণ করে লোড করুন।",
+    note: "এক্সটেনশনটি এখনো Chrome Web Store-এ প্রকাশিত হয়নি — উপরের বাটন থেকে .zip ডাউনলোড করে নিচের ধাপগুলো অনুসরণ করুন।",
     steps: [
-      "GitHub থেকে extension ফোল্ডারটি ডাউনলোড করুন (বা রিপোটি ক্লোন করুন)।",
+      "উপরের \"এক্সটেনশন ডাউনলোড করুন\" বাটনে ক্লিক করে .zip ফাইলটি নামান।",
+      ".zip ফাইলটি একটি ফোল্ডারে আনজিপ (extract) করুন।",
       "Chrome-এ chrome://extensions খুলুন।",
       "উপরের ডানদিকে \"Developer mode\" চালু করুন।",
-      "\"Load unpacked\" ক্লিক করে extension ফোল্ডারটি নির্বাচন করুন।",
+      "\"Load unpacked\" ক্লিক করে আনজিপ করা ফোল্ডারটি নির্বাচন করুন।",
       "TrustLens আইকন টুলবারে আসবে — যেকোনো পেজে ক্লিক করে যাচাই শুরু করুন।",
     ],
+
     featuresTitle: "এক্সটেনশন কী করে",
     features: [
       "নির্বাচিত টেক্সট বা পুরো পেজের দাবি যাচাই করে।",
@@ -49,17 +51,18 @@ const COPY = {
     intro:
       "Verify claims right on any webpage or social post — one click, no copy-pasting.",
     storeBtn: "Get it on the Chrome Web Store",
-    zipBtn: "Download packaged build (.zip)",
-    sourceBtn: "View source on GitHub",
+    zipBtn: "Download the extension (.zip)",
     manualTitle: "Manual install (Developer Mode)",
-    note: "The extension isn't on the Chrome Web Store yet — load it manually with the steps below.",
+    note: "The extension isn't on the Chrome Web Store yet — download the .zip above and load it manually with the steps below.",
     steps: [
-      "Download the extension folder from GitHub (or clone the repo).",
+      'Click "Download the extension (.zip)" above to get the file.',
+      "Unzip (extract) the .zip into a folder.",
       "Open chrome://extensions in Chrome.",
       'Turn on "Developer mode" (top-right toggle).',
-      'Click "Load unpacked" and select the extension folder.',
+      'Click "Load unpacked" and select the unzipped folder.',
       "The TrustLens icon appears in your toolbar — click it on any page to verify.",
     ],
+
     featuresTitle: "What the extension does",
     features: [
       "Checks claims from selected text or the whole page.",
@@ -109,32 +112,25 @@ export default function GetExtensionPage() {
               href={WEB_STORE_URL}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium px-4 py-2.5 rounded-lg bg-accent-blue text-white hover:bg-[color-mix(in_srgb,var(--accent-blue)_92%,white)] transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium px-4 py-2.5 rounded-lg bg-surface-2 text-text-primary hover:bg-surface-3/60 transition-colors"
             >
               {c.storeBtn}
             </a>
           )}
-          {EXTENSION_ZIP_URL && (
-            <a
-              href={EXTENSION_ZIP_URL}
-              className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium px-4 py-2.5 rounded-lg bg-surface-2 text-text-primary hover:bg-surface-3/60 transition-colors"
-            >
-              {c.zipBtn}
-            </a>
-          )}
           <a
-            href={GITHUB_EXTENSION_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            className={`inline-flex items-center justify-center gap-1.5 text-[13px] font-medium px-4 py-2.5 rounded-lg transition-colors ${
-              WEB_STORE_URL || EXTENSION_ZIP_URL
-                ? "bg-surface-2 text-text-primary hover:bg-surface-3/60"
-                : "bg-accent-blue text-white hover:bg-[color-mix(in_srgb,var(--accent-blue)_92%,white)]"
-            }`}
+            href={EXTENSION_ZIP_URL}
+            download
+            className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium px-4 py-2.5 rounded-lg bg-accent-blue text-white hover:bg-[color-mix(in_srgb,var(--accent-blue)_92%,white)] transition-colors"
           >
-            {c.sourceBtn}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            {c.zipBtn}
           </a>
         </div>
+
       </motion.section>
 
       {/* Manual install */}
