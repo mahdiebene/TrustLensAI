@@ -1,0 +1,135 @@
+/* TrustLens Chrome Extension — In-page overlay card styles.
+   All selectors are namespaced under #trustlens-overlay-card / .tl-* to avoid
+   clashing with the host page. */
+
+#trustlens-overlay-card {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  width: 280px;
+  background: #09090b;
+  color: #fafafa;
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  font-family: Inter, -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+  animation: tl-slide-in 0.22s ease-out;
+}
+
+@keyframes tl-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#trustlens-overlay-card .tl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.4);
+}
+
+#trustlens-overlay-card .tl-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+#trustlens-overlay-card .tl-logo {
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+#trustlens-overlay-card .tl-close {
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+#trustlens-overlay-card .tl-close:hover { color: #fafafa; }
+
+#trustlens-overlay-card .tl-body { padding: 14px 12px 16px; }
+
+#trustlens-overlay-card .tl-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #a1a1aa;
+  font-size: 13px;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+#trustlens-overlay-card .tl-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(59, 130, 246, 0.25);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: tl-spin 0.7s linear infinite;
+}
+
+@keyframes tl-spin { to { transform: rotate(360deg); } }
+
+#trustlens-overlay-card .tl-score {
+  font-size: 34px;
+  font-weight: 700;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: -0.04em;
+  text-align: center;
+}
+#trustlens-overlay-card .tl-score-max {
+  font-size: 14px;
+  color: #52525b;
+  margin-left: 2px;
+}
+
+#trustlens-overlay-card .tl-verdict {
+  text-align: center;
+  font-size: 13px;
+  color: #a1a1aa;
+  margin-top: 4px;
+}
+
+#trustlens-overlay-card .tl-pillars {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#trustlens-overlay-card .tl-pillar {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+#trustlens-overlay-card .tl-pillar-score {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: #fafafa;
+}
+
+#trustlens-overlay-card .tl-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+#trustlens-overlay-card .tl-error strong { color: #ef4444; }
+#trustlens-overlay-card .tl-error span { color: #a1a1aa; }

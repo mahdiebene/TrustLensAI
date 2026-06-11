@@ -49,6 +49,9 @@ app.add_middleware(
         "http://localhost:3000",
         settings.APP_URL,
     ],
+    # Allow the Chrome extension (chrome-extension://<id>) and any *.vercel.app
+    # preview deployment to call the API.
+    allow_origin_regex=r"^(chrome-extension://.*|https://.*\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

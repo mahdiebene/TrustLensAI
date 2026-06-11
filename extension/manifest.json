@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "TrustLens",
-  "version": "0.1.0",
-  "description": "AI-Powered Trust Scoring for Bengali Social Media",
-  "permissions": ["activeTab", "contextMenus", "storage"],
+  "name": "TrustLens — AI Trust Score",
+  "version": "0.2.0",
+  "description": "AI-Powered Trust Scoring for Bengali Social Media. Right-click any post, selection, or link to check its trust score.",
+  "permissions": ["activeTab", "contextMenus", "storage", "scripting"],
+  "host_permissions": [
+    "http://107.161.168.216:8000/*"
+  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
@@ -19,7 +22,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content/content.js"],
-      "css": ["content/content.css"]
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
     }
   ]
 }

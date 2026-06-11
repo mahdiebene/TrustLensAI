@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bn">
 <head>
   <meta charset="UTF-8">
   <title>TrustLens</title>
@@ -7,12 +7,20 @@
 </head>
 <body>
   <div class="header">
-    <div class="logo">T</div>
-    <span class="title">TrustLens</span>
+    <div class="brand">
+      <div class="logo">T</div>
+      <span class="title">TrustLens</span>
+    </div>
+    <button class="lang-toggle" id="langToggle" type="button">EN</button>
   </div>
 
-  <textarea class="input-area" id="input" placeholder="পোস্ট বা লিংক পেস্ট করুন..."></textarea>
-  <button class="btn" id="analyzeBtn">বিশ্লেষণ করুন</button>
+  <textarea class="input-area" id="input" placeholder=""></textarea>
+  <button class="btn" id="analyzeBtn"></button>
+
+  <div class="loading hidden" id="loading">
+    <div class="spinner"></div>
+    <span id="loadingText"></span>
+  </div>
 
   <div class="result hidden" id="result">
     <div class="score" id="score"></div>
@@ -20,7 +28,14 @@
     <div class="pillars" id="pillars"></div>
   </div>
 
+  <div class="scrape-failed hidden" id="scrapeFailed">
+    <strong id="scrapeFailedTitle"></strong>
+    <span id="scrapeFailedText"></span>
+  </div>
+
   <div class="error hidden" id="error"></div>
+
+  <div class="hint" id="hint"></div>
 
   <script src="popup.js"></script>
 </body>
