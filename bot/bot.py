@@ -388,12 +388,20 @@ def _extract_text(message: dict) -> str:
 
 
 async def handle_command(
-    client: httpx.AsyncClient, chat_id: int, text: str
+    client: httpx.AsyncClient,
+    chat_id: int,
+    text: str,
+    reply_text: str = "",
 ) -> bool:
     """Handle a /command. Returns True if the message was a handled command."""
-    cmd = text.split()[0].lower()
-    # Strip @BotName suffix for group mentions (e.g. /start@TrustLensBot).
-    cmd = cmd.split("@", 1)[0]
+    # The raw first token may carry a @mention suffix in groups
+    # (e.g. "/analyze@TrustLensAI_bot"). Strip the WHOLE token, mention and all,
+    # so the mention never leaks into the analyzed content.
+    parts = text.split(maxsplit=1)
+    raw_cmd = parts[0]
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    cmd = raw_cmd.split("@", 1)[0].lower()
+
 
     if cmd == "/start":
         await send_message(client, chat_id, t(chat_id, "welcome"))
@@ -409,8 +417,9 @@ async def handle_command(
 
     if cmd == "/lang":
         # Toggle, or honor an explicit argument: /lang en | /lang bn
-        arg = text[len(cmd):].strip().lower()
+        arg = rest.lower()
         if arg in ("en", "english"):
+
             new_lang = "en"
         elif arg in ("bn", "bangla", "bengali", "বাংলা"):
             new_lang = "bn"
@@ -421,12 +430,15 @@ async def handle_command(
         return True
 
     if cmd == "/analyze":
-        content = text[len(cmd):].strip()
+        # Prefer inline text after the command; otherwise analyze the
+        # message this command is replying to (common in groups).
+        content = rest or reply_text.strip()
         if not content:
             await send_message(client, chat_id, t(chat_id, "empty_analyze"))
             return True
         await run_analysis(client, chat_id, content)
         return True
+
 
     return False
 
@@ -464,6 +476,9 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
 
     text = _extract_text(message)
 
+    # Text of the message this one is replying to (used by /analyze in groups).
+    reply_text = _extract_text(message.get("reply_to_message") or {})
+
     # Photo without any caption → we can't analyze pixels yet.
     if not text and message.get("photo"):
         await send_message(client, chat_id, t(chat_id, "photo_only"))
@@ -474,10 +489,11 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
 
     # Commands start with "/".
     if text.startswith("/"):
-        handled = await handle_command(client, chat_id, text)
+        handled = await handle_command(client, chat_id, text, reply_text)
         if handled:
             return
         # Unknown command → fall through and analyze it as text.
+
 
     await run_analysis(client, chat_id, text)
 
