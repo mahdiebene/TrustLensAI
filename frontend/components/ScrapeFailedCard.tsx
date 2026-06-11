@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useI18n } from "@/lib/useI18n";
@@ -18,15 +18,84 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
   const t = useI18n();
   const { language, setResult, setIsAnalyzing, setAnalysisStatus } = useStore();
   const [text, setText] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageDataUrl, setImageDataUrl] = useState<string>("");
+  const [imageFileName, setImageFileName] = useState<string>("");
+  const [imageError, setImageError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reason = language === "bn" ? reasonBn : reasonEn;
 
+  // Mirror the InputForm upload flow: read file -> downscale to <=1280px JPEG
+  // to stay under Vercel's 4.5MB serverless body limit, then send as a data URL.
+  const handleFile = useCallback(
+    (file: File | undefined) => {
+      setImageError("");
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        setImageError(t.imageInvalidType);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setImageError(t.imageTooLarge);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const original = typeof reader.result === "string" ? reader.result : "";
+        if (!original) {
+          setImageError(t.imageReadFailed);
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 1280;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              const ratio = Math.min(maxDim / width, maxDim / height);
+              width = Math.round(width * ratio);
+              height = Math.round(height * ratio);
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              setImageDataUrl(original);
+              setImageFileName(file.name);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL("image/jpeg", 0.82);
+            setImageDataUrl(compressed.length < original.length ? compressed : original);
+            setImageFileName(file.name);
+          } catch {
+            setImageDataUrl(original);
+            setImageFileName(file.name);
+          }
+        };
+        img.onerror = () => setImageError(t.imageReadFailed);
+        img.src = original;
+      };
+      reader.onerror = () => setImageError(t.imageReadFailed);
+      reader.readAsDataURL(file);
+    },
+    [t]
+  );
+
+  const removeImage = () => {
+    setImageDataUrl("");
+    setImageFileName("");
+    setImageError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSubmit = async () => {
     const trimmed = text.trim();
-    if (!trimmed && !imageUrl.trim()) return;
+    if (!trimmed && !imageDataUrl) return;
 
     setSubmitting(true);
     setLocalError(null);
@@ -40,7 +109,7 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
     try {
       const data = await analyzeContent({
         content,
-        image_url: imageUrl.trim() || undefined,
+        image_url: imageDataUrl || undefined,
       });
       setResult(data);
       saveRecentScan(originalUrl, data);
@@ -53,7 +122,7 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
     }
   };
 
-  const canSubmit = !submitting && (text.trim().length > 0 || imageUrl.trim().length > 0);
+  const canSubmit = !submitting && (text.trim().length > 0 || imageDataUrl.length > 0);
 
   return (
     <motion.div
@@ -130,19 +199,79 @@ export function ScrapeFailedCard({ reasonEn, reasonBn, originalUrl }: ScrapeFail
         />
       </div>
 
-      {/* Image URL input */}
+      {/* Image upload (replaces the old paste-a-URL field) */}
       <div className="flex flex-col gap-1.5">
         <label className="text-[11px] tracking-wider uppercase text-text-tertiary font-medium">
-          {t.imageUrlLabel}
+          {t.imageUploadLabel}
         </label>
+
         <input
-          type="url"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          placeholder={t.imageUrlPlaceholder}
-          className="w-full px-3 py-2.5 rounded-lg bg-surface-1 border border-surface-3/40 text-[14px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-blue/60 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)] transition-all duration-150"
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(e) => handleFile(e.target.files?.[0])}
           disabled={submitting}
         />
+
+        {!imageDataUrl ? (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={submitting}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleFile(e.dataTransfer.files?.[0]);
+            }}
+            className="w-full flex flex-col items-center justify-center gap-1.5 py-6 px-3 rounded-lg bg-surface-1 border border-dashed border-surface-3/50 hover:border-accent-blue/50 hover:bg-surface-2/40 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-text-tertiary"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span className="text-[13.5px] text-text-secondary">{t.imageUploadCta}</span>
+            <span className="text-[11.5px] text-text-tertiary">{t.imageUploadHint}</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-3 p-2.5 rounded-lg bg-surface-1 border border-surface-3/40">
+            <img
+              src={imageDataUrl}
+              alt="upload preview"
+              className="h-12 w-12 rounded-md object-cover shrink-0"
+            />
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="text-[13px] text-text-primary truncate">{imageFileName}</span>
+              <span className="text-[11.5px] text-text-tertiary">{t.imageReady}</span>
+            </div>
+            <button
+              type="button"
+              onClick={removeImage}
+              disabled={submitting}
+              className="text-[12px] text-text-secondary hover:text-trust-low transition-colors px-2 py-1 disabled:opacity-40"
+            >
+              {t.remove}
+            </button>
+          </div>
+        )}
+
+        {imageError && (
+          <p className="text-[12px] text-trust-low flex items-center gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-trust-low" />
+            {imageError}
+          </p>
+        )}
       </div>
 
       {/* Local error */}
