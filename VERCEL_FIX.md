@@ -3,18 +3,34 @@
 > Read this BEFORE spending time re-diagnosing. This exact problem has happened
 > ~4 times. The cause and fix are now known. Don't repeat the investigation.
 
-> ⚠️ **2026-06-11 UPDATE:** Deployment Protection was set to **Disabled**, which
-> recovered the alias once — but the timeout RETURNED ~15 min later with **no new
-> deploy and protection still off**. So protection was NOT the (only) cause. The
-> auto-generated `trust-lens-ai-beta.vercel.app` alias is intermittently going
-> unbound at Vercel's edge. An empty-commit redeploy rebinds it each time
-> (`d0dcdbb` did so → `http=200`), but this is a band-aid.
+> ✅ **2026-06-11 — ACTUAL ROOT CAUSE FOUND & FIXED (commit `e29465c`).**
+> Earlier theories (Deployment Protection, "alias cutover", root-vs-frontend
+> `vercel.json` location) were all RED HERRINGS — each "fix" only appeared to work
+> because the redeploy happened to finish during a good window.
 >
-> 🎯 **DURABLE FIX (recommended): add a custom domain.** A real custom domain
-> (e.g. `trustlens.app` / a subdomain) gets a stable alias binding that does not
-> suffer this auto-`*.vercel.app` cutover flakiness. Until then: when it times
-> out, push an empty commit (IMMEDIATE FIX below) and it comes back in ~90s.
-> Keep Deployment Protection **Disabled** regardless.
+> **The real cause:** `frontend/vercel.json` contained a non-standard
+> `"git": { "deploymentEnabled": { "master": true } }` block (added in commits
+> `3c8e189`/`1eb73c1`, right before the outages began). With that block present,
+> Vercel intermittently **created the production deployment but skipped assigning
+> the `trust-lens-ai-beta.vercel.app` alias to it** — so the build showed
+> `state: success` while the hostname refused TCP connections at the edge.
+>
+> **How it was proven (do this exact test if it recurs):**
+> - Build status was `success` ("Deployment has completed") — so NOT a build error.
+> - `curl` to BOTH Vercel edge IPs (`64.29.17.131`, `216.198.79.131`) for OUR
+>   host → `connect=0.000000s` timeout, BUT `vercel.com`, `google.com`, and a
+>   DIFFERENT project `trustlens.vercel.app` all returned `200` instantly from the
+>   same machine/network. ⇒ network path fine, only OUR alias unbound ⇒ Vercel
+>   alias-assignment, not ISP, not code.
+>
+> **The fix:** delete the `git.deploymentEnabled` block; keep `vercel.json`
+> minimal (`{ "$schema": ..., "framework": "nextjs" }`). Default git integration
+> then auto-assigns the production alias reliably. After pushing `e29465c` the
+> alias recovered to `http=200 connect=0.03s` and stayed stable.
+>
+> 🎯 **Still recommended for extra safety:** add a real custom domain — custom
+> domains don't depend on the auto-`*.vercel.app` assignment at all.
+
 
 
 
@@ -34,25 +50,29 @@ key tell: **the breakage is the deploy/alias cutover, NOT your code.**
 
 ---
 
-## Root cause (confirmed)
+## Root cause (CONFIRMED 2026-06-11)
 
-The production alias `trust-lens-ai-beta.vercel.app` is unbound during a bad
-**alias cutover**:
+The production alias `trust-lens-ai-beta.vercel.app` was left **unbound** because
+the non-standard `git.deploymentEnabled` block in `frontend/vercel.json` made
+Vercel build the Production deployment but **skip the alias-assignment step**:
 
-1. A push to `master` triggers Vercel to build a **new Production deployment**.
-2. We observed (via `gh api .../deployments`) that **one push created TWO
-   deployments for the same commit** — a `Preview` *and* a `Production`.
-3. **Deployment Protection (Vercel Authentication) is ENABLED** on this project,
-   so **Preview** deployments are gated (`401` → SSO redirect loop).
-4. During the cutover window the alias can momentarily route to the *protected*
-   preview deployment (or to no live deployment yet, because the previous
-   Production deploy is already torn down). A protected/half-attached deployment
-   refuses/hangs the connection at the edge → **TCP connection timeout**.
-5. It does **not** always self-heal — the alias stays stuck until a **fresh,
-   clean cutover** rebinds it to a healthy settled deployment.
+1. A push to `master` triggers a new Production build → finishes `state: success`.
+2. With `"git": { "deploymentEnabled": { "master": true } }` present, the alias
+   was intermittently **not** re-pointed to that successful deployment.
+3. The edge then has no live deployment for the SNI host → it drops the TCP
+   handshake → `connect=0.000000s` timeout (the socket never opens).
+4. Removing that block (commit `e29465c`, minimal `vercel.json`) restored the
+   default git integration, which auto-assigns the alias reliably → recovered to
+   `http=200 connect=0.03s`.
 
-Why a "revert" used to fix it: the revert's code was irrelevant — its only real
-effect was **triggering a new cutover** to an already-warm deployment.
+Why a "revert" / empty commit used to "fix" it: the code was irrelevant — the new
+push just happened to trigger an alias assignment that succeeded that time. It was
+a coin flip, which is why the problem kept coming back.
+
+> ⚠️ The sections below ("dual Preview+Production deploy", "Deployment
+> Protection 401") describe the EARLIER, DISPROVEN theories. They are kept only
+> as a record of what was ruled out — do NOT treat them as the cause.
+
 
 ### What is NOT the cause
 - Not your component code (broke with no frontend change).
