@@ -82,7 +82,23 @@ services:
         limits:
           memory: 1G
 
+  bot:
+    build: ./bot
+    env_file: .env
+    environment:
+      # Reach the backend over the compose network by default.
+      API_URL: ${API_URL:-http://backend:8000}
+    depends_on:
+      - backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
 volumes:
   postgres_data:
   neo4j_data:
   n8n_data:
+
+
