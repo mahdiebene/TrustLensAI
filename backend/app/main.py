@@ -1,8 +1,11 @@
 """FastAPI application entry point."""
 
+import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -12,9 +15,20 @@ from app.api.health import router as health_router
 from app.api.analyze import router as analyze_router
 from app.config import get_settings
 
+# Configure root logging so application logger.info(...) calls (e.g. the
+# [Scoring] Pass 0/1/2 pipeline markers) propagate to stdout and are visible
+# in `docker logs`. Without this, only uvicorn's own access/startup logs show.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    stream=sys.stdout,
+    force=True,
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     """Application lifespan — startup and shutdown events."""
     # Startup
     settings = get_settings()
