@@ -261,15 +261,43 @@ def _split_message(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-async def analyze_content(content: str) -> dict:
+async def get_photo_file_url(client: httpx.AsyncClient, file_id: str) -> str | None:
+    """Resolve a Telegram photo `file_id` into a public HTTPS download URL.
+
+    Telegram file URLs embed the bot token and are fetchable over HTTPS, so the
+    backend's vision model can read the image directly. Returns None on failure.
+    """
+    data = await _tg_post(client, "getFile", {"file_id": file_id})
+    if not data or not data.get("ok"):
+        return None
+    file_path = (data.get("result") or {}).get("file_path")
+    if not file_path:
+        return None
+    return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+
+
+def _largest_photo_id(message: dict) -> str | None:
+    """Return the file_id of the highest-resolution photo in a message (if any)."""
+    photos = message.get("photo") or []
+    if not photos:
+        return None
+    # Telegram sends an ascending-size list; the last entry is the largest.
+    return photos[-1].get("file_id")
+
+
+async def analyze_content(content: str, image_url: str | None = None) -> dict:
     """Call the TrustLens backend to analyze content. Returns dict (may hold 'error')."""
     try:
+        payload: dict[str, Any] = {"content": content[:MAX_CONTENT_LEN]}
+        if image_url:
+            payload["image_url"] = image_url
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 f"{API_URL}/api/analyze",
-                json={"content": content[:MAX_CONTENT_LEN]},
+                json=payload,
                 timeout=ANALYZE_TIMEOUT,
             )
+
         if resp.status_code == 200:
             return resp.json()
         logger.warning("Backend returned %s: %s", resp.status_code, resp.text[:200])
@@ -468,16 +496,31 @@ async def handle_command(
     return False
 
 
-async def run_analysis(client: httpx.AsyncClient, chat_id: int, content: str) -> None:
-    """Analyze content and reply with a formatted result."""
-    if len(content) < 3:
+async def run_analysis(
+    client: httpx.AsyncClient,
+    chat_id: int,
+    content: str,
+    image_url: str | None = None,
+) -> None:
+    """Analyze content (optionally with an image) and reply with a result."""
+    # With an image attached, the image itself is enough to analyze even if the
+    # caption is empty/short. Without one, require a few words of text.
+    if not image_url and len(content) < 3:
         await send_message(client, chat_id, t(chat_id, "too_short"))
         return
 
     await send_chat_action(client, chat_id, "typing")
     await send_message(client, chat_id, t(chat_id, "analyzing"))
 
-    result = await analyze_content(content)
+    # Backend requires a non-empty `content`; for caption-less images send a
+    # short instruction so the vision pillar still runs.
+    effective_content = content.strip() or (
+        "একটি ছবি যাচাইয়ের জন্য পাঠানো হয়েছে — ছবিটি বিশ্লেষণ করুন।"
+        if _chat_lang.get(chat_id, "bn") == "bn"
+        else "An image was submitted for verification — analyze the image."
+    )
+
+    result = await analyze_content(effective_content, image_url=image_url)
     if "error" in result:
         await send_message(client, chat_id, t(chat_id, "error"))
         return
@@ -485,6 +528,7 @@ async def run_analysis(client: httpx.AsyncClient, chat_id: int, content: str) ->
     await send_message(
         client, chat_id, format_result(chat_id, result, content), disable_preview=False
     )
+
 
 
 
@@ -509,6 +553,11 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
     reply_text = _extract_text(reply_msg)
     reply_has_photo = bool(reply_msg.get("photo"))
 
+    # Pick the photo to analyze: the message's own photo, else the replied-to
+    # one (so "/analyze" replying to an image works in groups).
+    photo_id = _largest_photo_id(message) or _largest_photo_id(reply_msg)
+
+
 
 
     # Does this message contain a recognized command token anywhere?
@@ -529,15 +578,13 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
     # failing that, from the message being replied to.
     if cmd == "/analyze":
         content = _strip_command_token(text) or reply_text
-        if not content:
-            # Replying to a photo-only message with /analyze.
-            if reply_has_photo:
-                await send_message(client, chat_id, t(chat_id, "photo_only"))
-            else:
-                await send_message(client, chat_id, t(chat_id, "empty_analyze"))
+        image_url = await get_photo_file_url(client, photo_id) if photo_id else None
+        if not content and not image_url:
+            await send_message(client, chat_id, t(chat_id, "empty_analyze"))
             return
-        await run_analysis(client, chat_id, content)
+        await run_analysis(client, chat_id, content, image_url=image_url)
         return
+
 
     # No command was given.
     #
@@ -547,17 +594,16 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
     if is_group:
         return
 
-    # Private chat: plain text / forwarded message → analyze it directly
+    # Private chat: plain text / forwarded message / photo → analyze directly
     # (no command needed — this is the natural 1:1 DM experience).
     content = text or reply_text
+    image_url = await get_photo_file_url(client, photo_id) if photo_id else None
 
-    if not content:
-        # Photo without any caption → we can't analyze pixels yet.
-        if message.get("photo") or reply_has_photo:
-            await send_message(client, chat_id, t(chat_id, "photo_only"))
+    if not content and not image_url:
         return
 
-    await run_analysis(client, chat_id, content)
+    await run_analysis(client, chat_id, content, image_url=image_url)
+
 
 
 
