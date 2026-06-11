@@ -12,12 +12,11 @@ import { useStore } from "@/lib/store";
 import { useI18n } from "@/lib/useI18n";
 import { loadRecentScans, type RecentScanItem } from "@/lib/recentScans";
 
-const BOT_SOURCE_URL =
-  process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ||
-  "https://github.com/mahdiebene/TrustLensAI/tree/main/bot";
-// Extension card now routes to the in-app install guide (/get-extension),
-// which itself links out to the GitHub source / packaged build.
+// Bot card now routes to the in-app bot guide (/get-bot), which links out to
+// the live Telegram bot. Extension card routes to /get-extension.
+const BOT_SOURCE_URL = "/get-bot";
 const EXTENSION_SOURCE_URL = "/get-extension";
+
 
 const HOW_STEPS = [
   { num: "01", titleKey: "pasteContent", descKey: "pasteContentDesc" },
@@ -137,10 +136,8 @@ export default function HomePage() {
                 {t.verifyTrustworthiness}
               </h3>
             </div>
-            <span className="text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-accent-blue/10 text-accent-blue shrink-0">
-              {t.beta}
-            </span>
           </div>
+
           <InputForm />
           <p className="text-[11.5px] md:text-[12px] text-text-tertiary leading-[1.55] pt-2.5 border-t border-surface-3/40">
             {t.pastePrompt}
@@ -192,13 +189,13 @@ export default function HomePage() {
           <ToolCard
             title={t.toolTelegramTitle}
             copy={t.toolTelegramCopy}
-            cta={t.viewSource}
+            cta={t.openBot}
             href={BOT_SOURCE_URL}
-            external
-            status={t.comingSoon}
+            status={t.available}
             tone="muted"
             icon={<IconBot />}
           />
+
           <ToolCard
             title={t.toolExtensionTitle}
             copy={t.toolExtensionCopy}

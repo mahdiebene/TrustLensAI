@@ -41,6 +41,8 @@ export const strings = {
     openBot: "বট খুলুন",
     openExtension: "এক্সটেনশন খুলুন",
     addToChrome: "Chrome-এ যোগ করুন",
+
+
     openDashboard: "ড্যাশবোর্ড খুলুন",
     botCopy: "যেকোনো টেক্সট বা ইমেজ বটকে ফরোয়ার্ড করুন তাৎক্ষণিক চেকের জন্য।",
     extensionCopy: "এক ক্লিকে দাবি যাচাই করতে ব্রাউজারে থেকে সরাসরি স্ক্যান করুন।",

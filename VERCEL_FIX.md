@@ -3,33 +3,41 @@
 > Read this BEFORE spending time re-diagnosing. This exact problem has happened
 > ~4 times. The cause and fix are now known. Don't repeat the investigation.
 
-> ✅ **2026-06-11 — ACTUAL ROOT CAUSE FOUND & FIXED (commit `e29465c`).**
-> Earlier theories (Deployment Protection, "alias cutover", root-vs-frontend
-> `vercel.json` location) were all RED HERRINGS — each "fix" only appeared to work
-> because the redeploy happened to finish during a good window.
+> ✅ **2026-06-11 — TRUE ROOT CAUSE PROVEN: it's the local ISP, NOT Vercel and
+> NOT this repo.** Every code/config theory below (Deployment Protection, "alias
+> cutover", `vercel.json` location, the `git.deploymentEnabled` block) was a RED
+> HERRING. Each "fix" only *seemed* to work because the ISP route to Vercel's edge
+> happened to recover during the ~90s build window.
 >
-> **The real cause:** `frontend/vercel.json` contained a non-standard
-> `"git": { "deploymentEnabled": { "master": true } }` block (added in commits
-> `3c8e189`/`1eb73c1`, right before the outages began). With that block present,
-> Vercel intermittently **created the production deployment but skipped assigning
-> the `trust-lens-ai-beta.vercel.app` alias to it** — so the build showed
-> `state: success` while the hostname refused TCP connections at the edge.
+> **The real cause:** the developer's ISP **intermittently blackholes Vercel's
+> `*.vercel.app` edge IP ranges** (`64.29.17.x` / `216.198.79.x`). When it's
+> flapping, the TCP handshake to those IPs never completes → `connect=0.000000s`
+> timeout in `curl` and `ERR_CONNECTION_TIMED_OUT` in the browser. The deployment,
+> build, alias, and DNS are all fine the entire time.
 >
-> **How it was proven (do this exact test if it recurs):**
-> - Build status was `success` ("Deployment has completed") — so NOT a build error.
-> - `curl` to BOTH Vercel edge IPs (`64.29.17.131`, `216.198.79.131`) for OUR
->   host → `connect=0.000000s` timeout, BUT `vercel.com`, `google.com`, and a
->   DIFFERENT project `trustlens.vercel.app` all returned `200` instantly from the
->   same machine/network. ⇒ network path fine, only OUR alias unbound ⇒ Vercel
->   alias-assignment, not ISP, not code.
+> **How it was proven (run this exact test if it recurs):**
+> 1. `gh api .../deployments/<id>/statuses` → build `state: success`. Not a build issue.
+> 2. Hit several hosts back-to-back from the same machine:
+>    ```bash
+>    curl -sS -o NUL -w "%{http_code} connect=%{time_connect}s\n" --max-time 12 https://trust-lens-ai-beta.vercel.app/
+>    curl -sS -o NUL -w "%{http_code} connect=%{time_connect}s\n" --max-time 12 https://trustlens.vercel.app/   # UNRELATED vercel project
+>    curl -sS -o NUL -w "%{http_code} connect=%{time_connect}s\n" --max-time 12 https://vercel.com/
+>    ```
+>    During a flap, **our site AND the unrelated `*.vercel.app` project BOTH
+>    timed out together** (`connect=0`) — that rules out our project entirely.
+> 3. **Turn on a VPN and re-run the same 3 curls → all returned `http=200`.**
+>    Same hosts, same minute, only the network path changed. Case closed.
 >
-> **The fix:** delete the `git.deploymentEnabled` block; keep `vercel.json`
-> minimal (`{ "$schema": ..., "framework": "nextjs" }`). Default git integration
-> then auto-assigns the production alias reliably. After pushing `e29465c` the
-> alias recovered to `http=200 connect=0.03s` and stayed stable.
+> 🎯 **THE FIX (network, do one of these):**
+> - **Use a VPN** when the site appears "down" — instant workaround (verified).
+> - Switch DNS won't help (DNS resolves fine); the block is at the IP/routing layer.
+> - Long-term: report the `64.29.x` / `216.198.x` blackhole to the ISP, OR put the
+>   site behind a **custom domain on Cloudflare** (different edge IPs your ISP
+>   isn't dropping) — this also removes any `*.vercel.app` dependency.
 >
-> 🎯 **Still recommended for extra safety:** add a real custom domain — custom
-> domains don't depend on the auto-`*.vercel.app` assignment at all.
+> ⛔ **Do NOT** push empty commits / edit `vercel.json` / toggle Vercel settings to
+> "fix" this — those did nothing; recovery was always just the ISP route healing.
+
 
 
 
