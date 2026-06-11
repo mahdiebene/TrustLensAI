@@ -15,9 +15,9 @@ import { loadRecentScans, type RecentScanItem } from "@/lib/recentScans";
 const BOT_SOURCE_URL =
   process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ||
   "https://github.com/mahdiebene/TrustLensAI/tree/main/bot";
-const EXTENSION_SOURCE_URL =
-  process.env.NEXT_PUBLIC_CHROME_EXTENSION_URL ||
-  "https://github.com/mahdiebene/TrustLensAI/tree/main/extension";
+// Extension card now routes to the in-app install guide (/get-extension),
+// which itself links out to the GitHub source / packaged build.
+const EXTENSION_SOURCE_URL = "/get-extension";
 
 const HOW_STEPS = [
   { num: "01", titleKey: "pasteContent", descKey: "pasteContentDesc" },
@@ -202,10 +202,9 @@ export default function HomePage() {
           <ToolCard
             title={t.toolExtensionTitle}
             copy={t.toolExtensionCopy}
-            cta={t.viewSource}
+            cta={t.addToChrome}
             href={EXTENSION_SOURCE_URL}
-            external
-            status={t.comingSoon}
+            status={t.available}
             tone="muted"
             icon={<IconExt />}
           />
