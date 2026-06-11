@@ -3,6 +3,21 @@
 > Read this BEFORE spending time re-diagnosing. This exact problem has happened
 > ~4 times. The cause and fix are now known. Don't repeat the investigation.
 
+> ⚠️ **2026-06-11 UPDATE:** Deployment Protection was set to **Disabled**, which
+> recovered the alias once — but the timeout RETURNED ~15 min later with **no new
+> deploy and protection still off**. So protection was NOT the (only) cause. The
+> auto-generated `trust-lens-ai-beta.vercel.app` alias is intermittently going
+> unbound at Vercel's edge. An empty-commit redeploy rebinds it each time
+> (`d0dcdbb` did so → `http=200`), but this is a band-aid.
+>
+> 🎯 **DURABLE FIX (recommended): add a custom domain.** A real custom domain
+> (e.g. `trustlens.app` / a subdomain) gets a stable alias binding that does not
+> suffer this auto-`*.vercel.app` cutover flakiness. Until then: when it times
+> out, push an empty commit (IMMEDIATE FIX below) and it comes back in ~90s.
+> Keep Deployment Protection **Disabled** regardless.
+
+
+
 ---
 
 ## The symptom
