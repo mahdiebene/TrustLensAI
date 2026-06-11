@@ -75,6 +75,10 @@ logger = logging.getLogger("trustlens.bot")
 # In-memory per-chat language preference. "bn" (default) or "en".
 _chat_lang: dict[int, str] = {}
 
+# Recognized bot commands (without the leading "/").
+COMMANDS = {"/start", "/help", "/about", "/lang", "/analyze"}
+
+
 
 # ---------------------------------------------------------------------------
 # Localized copy
@@ -387,6 +391,24 @@ def _extract_text(message: dict) -> str:
     return (message.get("text") or message.get("caption") or "").strip()
 
 
+def _strip_command_token(text: str) -> str:
+    """Remove a leading/standalone command token (e.g. "/analyze" or
+    "/analyze@TrustLensAI_bot") from anywhere in the text and return what's left.
+
+    Telegram users commonly put the command on its own line with the claim on
+    another line, or trail the command after the text. We strip the FIRST
+    command-looking token and keep everything else.
+    """
+    out_tokens: list[str] = []
+    removed = False
+    for tok in text.split():
+        if not removed and tok.startswith("/") and tok.split("@", 1)[0].lower() in COMMANDS:
+            removed = True
+            continue
+        out_tokens.append(tok)
+    return " ".join(out_tokens).strip()
+
+
 async def handle_command(
     client: httpx.AsyncClient,
     chat_id: int,
@@ -394,13 +416,16 @@ async def handle_command(
     reply_text: str = "",
 ) -> bool:
     """Handle a /command. Returns True if the message was a handled command."""
-    # The raw first token may carry a @mention suffix in groups
-    # (e.g. "/analyze@TrustLensAI_bot"). Strip the WHOLE token, mention and all,
-    # so the mention never leaks into the analyzed content.
-    parts = text.split(maxsplit=1)
-    raw_cmd = parts[0]
-    rest = parts[1].strip() if len(parts) > 1 else ""
-    cmd = raw_cmd.split("@", 1)[0].lower()
+    # Identify the command from the first command-looking token (it may carry a
+    # @mention suffix in groups, e.g. "/analyze@TrustLensAI_bot").
+    first_cmd_token = next(
+        (tok for tok in text.split() if tok.startswith("/")), ""
+    )
+    cmd = first_cmd_token.split("@", 1)[0].lower()
+    # Everything in the message that isn't the command token (works whether the
+    # command is at the start, end, or on its own line).
+    rest = _strip_command_token(text)
+
 
 
     if cmd == "/start":
@@ -476,26 +501,51 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
 
     text = _extract_text(message)
 
-    # Text of the message this one is replying to (used by /analyze in groups).
-    reply_text = _extract_text(message.get("reply_to_message") or {})
+    # The message this one is replying to (group flow: reply + /analyze).
+    reply_msg = message.get("reply_to_message") or {}
+    reply_text = _extract_text(reply_msg)
+    reply_has_photo = bool(reply_msg.get("photo"))
 
-    # Photo without any caption → we can't analyze pixels yet.
-    if not text and message.get("photo"):
-        await send_message(client, chat_id, t(chat_id, "photo_only"))
-        return
+    # Does this message contain a recognized command token anywhere?
+    # (Users frequently put "/analyze@Bot" on its own line, or after the text.)
+    tokens = text.split()
+    cmd = next(
+        (tok.split("@", 1)[0].lower() for tok in tokens
+         if tok.startswith("/") and tok.split("@", 1)[0].lower() in COMMANDS),
+        "",
+    )
 
-    if not text:
-        return
-
-    # Commands start with "/".
-    if text.startswith("/"):
-        handled = await handle_command(client, chat_id, text, reply_text)
-        if handled:
+    # Pure utility commands (/start, /help, /about, /lang) — handle and return.
+    if cmd in ("/start", "/help", "/about", "/lang"):
+        if await handle_command(client, chat_id, text, reply_text):
             return
-        # Unknown command → fall through and analyze it as text.
 
+    # /analyze: gather the claim from the message (command token stripped) or,
+    # failing that, from the message being replied to.
+    if cmd == "/analyze":
+        content = _strip_command_token(text) or reply_text
+        if not content:
+            # Replying to a photo-only message with /analyze.
+            if reply_has_photo:
+                await send_message(client, chat_id, t(chat_id, "photo_only"))
+            else:
+                await send_message(client, chat_id, t(chat_id, "empty_analyze"))
+            return
+        await run_analysis(client, chat_id, content)
+        return
 
-    await run_analysis(client, chat_id, text)
+    # No command. If the user replied to a message (without /analyze) and added
+    # no new text, analyze the replied-to message; otherwise analyze this text.
+    content = text or reply_text
+
+    if not content:
+        # Photo without any caption → we can't analyze pixels yet.
+        if message.get("photo") or reply_has_photo:
+            await send_message(client, chat_id, t(chat_id, "photo_only"))
+        return
+
+    await run_analysis(client, chat_id, content)
+
 
 
 # ---------------------------------------------------------------------------
