@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Hind_Siliguri, JetBrains_Mono } from "next/font/google";
+
 import "./globals.css";
 
 const inter = Inter({
@@ -21,25 +22,60 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const siteUrl = "https://www.trustlensai.tech";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "TrustLens — Live Trust Check for Bengali Social Media",
   description:
     "AI-powered trust scoring for Bengali & English social posts. Six independent signals, explainable verdicts. গুজব চিনুন, সত্য জানুন।",
+  applicationName: "TrustLens",
+  keywords: [
+    "TrustLens",
+    "fact check",
+    "misinformation",
+    "Bengali",
+    "Bangladesh",
+    "trust score",
+    "fake news detector",
+    "গুজব",
+    "ফ্যাক্ট চেক",
+  ],
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     shortcut: "/favicon.svg",
     apple: "/favicon.svg",
   },
-  themeColor: "#0b0d10",
+  alternates: {
+    canonical: siteUrl,
+  },
+
   openGraph: {
     title: "TrustLens — Live Trust Check",
     description:
-      "Six-signal trust scoring for Bengali social media. Explainable, bilingual, fast.",
+      "AI-powered trust scoring for Bengali & English social posts. Six independent signals, explainable verdicts. গুজব চিনুন, সত্য জানুন।",
+    url: siteUrl,
+    siteName: "TrustLens",
     type: "website",
+    locale: "bn_BD",
+    // og image is auto-injected from app/opengraph-image.tsx (1200x630)
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TrustLens — Live Trust Check",
+    description:
+      "Six-signal trust scoring for Bengali social media. Explainable, bilingual, fast.",
+    // twitter image is auto-injected from app/twitter-image.tsx
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#0b0d10",
+};
+
+
 // Inline script to prevent flash of wrong theme.
+
 // Default = light. Only "light" or "dark" is honored; legacy "system" values
 // are migrated to light on next load.
 const themeScript = `
