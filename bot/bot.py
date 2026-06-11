@@ -1,5 +1,6 @@
 """TrustLens Telegram Bot.
 
+
 A self-contained, dependency-light Telegram bot that lets users verify the
 credibility of any text, link, or forwarded post using the TrustLens backend.
 
@@ -21,7 +22,8 @@ Environment
 - API_URL             (optional) — TrustLens backend base URL
                                     (default: http://localhost:8000)
 - APP_URL             (optional) — public web app URL for "full report" links
-                                    (default: https://trustlens.app)
+                                    (default: https://trust-lens-ai-beta.vercel.app)
+
 
 Run
 ---
@@ -36,8 +38,10 @@ import logging
 import os
 import sys
 from typing import Any
+from urllib.parse import quote
 
 import httpx
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -45,7 +49,11 @@ import httpx
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 API_URL = os.getenv("API_URL", "http://localhost:8000").rstrip("/")
-APP_URL = os.getenv("APP_URL", "https://trustlens.app").rstrip("/")
+APP_URL = os.getenv("APP_URL", "https://trust-lens-ai-beta.vercel.app").rstrip("/")
+# Cap deep-link query length so the "full report" URL stays well within
+# Telegram/browser limits; the frontend re-runs analysis from the `content` param.
+MAX_DEEPLINK_CONTENT = 1500
+
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Timeouts (seconds)
@@ -297,11 +305,25 @@ def _esc(text: str) -> str:
     return html.escape(text or "", quote=False)
 
 
-def format_result(chat_id: int, result: dict) -> str:
+def _report_url(content: str = "") -> str:
+    """Build a deep link to the full web report for the given content.
+
+    The frontend `/results` page re-runs analysis from the `content` query
+    param (served from the backend cache, so it loads instantly). Falls back
+    to the app home if there's no content to link.
+    """
+    snippet = (content or "").strip()
+    if not snippet:
+        return APP_URL
+    return f"{APP_URL}/results?content={quote(snippet[:MAX_DEEPLINK_CONTENT])}"
+
+
+def format_result(chat_id: int, result: dict, content: str = "") -> str:
     """Format an analysis result into a localized HTML message."""
     lang = _chat_lang.get(chat_id, "bn")
 
     # Scrape failure → ask user for text.
+
     if result.get("scrape_failed"):
         reason = result.get("scrape_reason_bn" if lang == "bn" else "scrape_reason_en", "")
         msg = t(chat_id, "scrape_failed")
@@ -348,8 +370,9 @@ def format_result(chat_id: int, result: dict) -> str:
         lines.append(f"<i>{_esc(snippet)}</i>")
         lines.append("")
 
-    # Link to the full web report.
-    lines.append(f'<a href="{APP_URL}">{t(chat_id, "full_report")}</a>')
+    # Link to the full web report (deep link re-runs the same analysis).
+    lines.append(f'<a href="{_report_url(content)}">{t(chat_id, "full_report")}</a>')
+
 
     return "\n".join(lines)
 
@@ -422,7 +445,10 @@ async def run_analysis(client: httpx.AsyncClient, chat_id: int, content: str) ->
         await send_message(client, chat_id, t(chat_id, "error"))
         return
 
-    await send_message(client, chat_id, format_result(chat_id, result), disable_preview=False)
+    await send_message(
+        client, chat_id, format_result(chat_id, result, content), disable_preview=False
+    )
+
 
 
 async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> None:
