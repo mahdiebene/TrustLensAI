@@ -499,6 +499,9 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
     if chat_id is None:
         return
 
+    chat_type = chat.get("type", "private")
+    is_group = chat_type in ("group", "supergroup")
+
     text = _extract_text(message)
 
     # The message this one is replying to (group flow: reply + /analyze).
@@ -506,11 +509,6 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
     reply_text = _extract_text(reply_msg)
     reply_has_photo = bool(reply_msg.get("photo"))
 
-    # Diagnostic: log exactly what we receive so routing bugs are visible.
-    logger.info(
-        "UPDATE chat=%s text=%r has_reply=%s reply_text=%r has_photo=%s",
-        chat_id, text, bool(reply_msg), reply_text, bool(message.get("photo")),
-    )
 
 
     # Does this message contain a recognized command token anywhere?
@@ -541,8 +539,16 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
         await run_analysis(client, chat_id, content)
         return
 
-    # No command. If the user replied to a message (without /analyze) and added
-    # no new text, analyze the replied-to message; otherwise analyze this text.
+    # No command was given.
+    #
+    # In GROUPS we must NEVER auto-analyze. Now that privacy mode is off the bot
+    # receives every group message; analyzing all of them would spam the chat.
+    # Group users must explicitly invoke /analyze (inline or as a reply).
+    if is_group:
+        return
+
+    # Private chat: plain text / forwarded message → analyze it directly
+    # (no command needed — this is the natural 1:1 DM experience).
     content = text or reply_text
 
     if not content:
@@ -552,6 +558,7 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
         return
 
     await run_analysis(client, chat_id, content)
+
 
 
 
