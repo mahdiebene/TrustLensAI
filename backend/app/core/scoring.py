@@ -48,8 +48,11 @@ from datetime import datetime, timezone
 
 from app.models.schemas import AnalyzeResponse, PillarScore
 from app.services.pollinations import get_pollinations_client
+from app.core.rag.chunking import semantic_chunk
+from app.core.rag.contextual import enrich_chunks
 
 logger = logging.getLogger(__name__)
+
 
 # Pillar weights — content accuracy is king
 PILLAR_WEIGHTS = {
@@ -278,7 +281,71 @@ def _extract_json(text: str) -> dict | None:
             return None
 
 
+def _build_rag_context(enriched: list) -> str:
+    """Distill enriched (contextual) chunks into a compact context block that
+    is prepended to the verifier prompt.
+
+    This is the consumption side of the Contextual-RAG pipeline: the
+    semantic chunker (chunking.semantic_chunk) splits the post on claim/
+    sentence boundaries, contextual.enrich_chunks annotates each chunk with
+    an LLM-generated topic, extracted claims, source attribution, language
+    and keywords, and here we fold those signals into a structured hint so the
+    downstream web-grounded verifier searches the *actual* claims rather than
+    the raw blob.
+    """
+    if not enriched:
+        return ""
+
+    all_claims: list[str] = []
+    topics: set[str] = set()
+    keywords: set[str] = set()
+    sources: set[str] = set()
+    languages: set[str] = set()
+
+    for ec in enriched:
+        for c in getattr(ec, "claims", []) or []:
+            if isinstance(c, str) and c.strip():
+                all_claims.append(c.strip())
+        topic = getattr(ec, "topic", None)
+        if topic and topic != "unknown":
+            topics.add(topic)
+        for kw in getattr(ec, "keywords", []) or []:
+            if isinstance(kw, str) and kw.strip():
+                keywords.add(kw.strip())
+        src = getattr(ec, "source_mentioned", None)
+        if src:
+            sources.add(src)
+        lang = getattr(ec, "language", None)
+        if lang:
+            languages.add(lang)
+
+    # Dedupe claims while preserving order.
+    seen: set[str] = set()
+    deduped_claims = []
+    for c in all_claims:
+        key = c.lower()[:80]
+        if key not in seen:
+            seen.add(key)
+            deduped_claims.append(c)
+
+    lines = ["═══ EXTRACTED CLAIM CONTEXT (Contextual RAG pre-processing) ═══"]
+    if deduped_claims:
+        lines.append("Distinct factual claims detected (verify each):")
+        for c in deduped_claims[:10]:
+            lines.append(f"  • {c[:200]}")
+    if topics:
+        lines.append(f"Topics: {', '.join(sorted(topics)[:6])}")
+    if keywords:
+        lines.append(f"Search keywords: {', '.join(sorted(keywords)[:12])}")
+    if sources:
+        lines.append(f"Sources mentioned in text: {', '.join(sorted(sources)[:6])}")
+    if languages:
+        lines.append(f"Detected language(s): {', '.join(sorted(languages))}")
+    return "\n".join(lines)
+
+
 def _stringify_verifier_output(data: dict | None, fallback: str) -> str:
+
     """Turn a verifier JSON dict into a compact human/LLM-readable block."""
     if not data:
         return f"(no structured output — raw: {fallback[:300]})"
@@ -463,10 +530,33 @@ async def run_analysis(content: str, image_url: str | None = None) -> AnalyzeRes
 
     logger.info(f"[Scoring] === Verifier-first analysis START (image={'yes' if image_url else 'no'}) ===")
 
+    # ───── PASS 0: Contextual RAG pre-processing ─────
+    # Variable/semantic chunking + Anthropic-style contextual enrichment.
+    # Each chunk is split on claim/sentence boundaries (Bengali । + English . ? !)
+    # then an LLM annotates topic, extracted claims, source, language & keywords.
+    # The distilled claim context is prepended to the verifier prompt so the
+    # web-grounded search targets the actual factual claims in the post.
+    rag_context = ""
+    try:
+        pass0_t = time.time()
+        chunks = semantic_chunk(content)
+        if chunks:
+            enriched = await enrich_chunks(chunks)
+            rag_context = _build_rag_context(enriched)
+            logger.info(
+                f"[Scoring] Pass 0 (contextual RAG) done in {time.time() - pass0_t:.1f}s — "
+                f"{len(chunks)} semantic chunks, {len(enriched)} enriched"
+            )
+    except Exception as e:
+        logger.warning(f"[Scoring] Pass 0 (contextual RAG) skipped: {type(e).__name__}: {e}")
+
+    verify_content = content if not rag_context else f"{content}\n\n{rag_context}"
+
     # ───── PASS 1: Verify ─────
     pass1_t = time.time()
-    a_parsed, b_parsed, a_raw, b_raw = await _verify_facts(content, today, year)
+    a_parsed, b_parsed, a_raw, b_raw = await _verify_facts(verify_content, today, year)
     logger.info(f"[Scoring] Pass 1 (verify) done in {time.time() - pass1_t:.1f}s")
+
 
     if not a_parsed and not b_parsed:
         return _error_response("All verifiers failed — could not retrieve current evidence", start_time)
