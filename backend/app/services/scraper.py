@@ -88,7 +88,59 @@ def is_instagram_url(url: str) -> bool:
     return "instagram.com" in parsed.netloc
 
 
+# Phrases that mark a scrape as the platform's *shell / interface*, not the
+# actual post content. When a login-walled social URL only yields one of these
+# (typical of Jina/OG grabbing og:title/og:description on a gated post), we must
+# treat the scrape as FAILED — otherwise the LLM gets a contentless snippet and
+# fabricates a verdict (the exact "random trust score" bug).
+_SHELL_PHRASES = [
+    "on instagram:", "on instagram ·", "• instagram", "see photos and videos from",
+    "photos and videos from", "log in to see", "log in or sign up",
+    "you must log in", "this content isn't available", "this content is no longer",
+    "page isn't available", "sorry, this page", "watch the latest",
+    "see posts, photos and more", "to see more from", "join facebook to",
+    "see more on facebook", "reels on instagram", "instagram post", "instagram reel",
+    "posts from", "shared a post", "shared a reel",
+]
+
+
+def _is_low_quality_social_text(text: str, author: str = "") -> tuple[bool, str]:
+    """Decide whether extracted social text is too thin/shell-like to analyze.
+
+    Returns (is_low_quality, reason). For login-walled platforms (IG/FB/X), a
+    scrape that only produced the profile shell, a bare handle, or a generic
+    "X on Instagram: ..." snippet is NOT real post content — pass it to the LLM
+    and it will hallucinate a verdict. We require enough genuine narrative text.
+    """
+    t = (text or "").strip()
+    low = t.lower()
+
+    # 1. Too short to contain a verifiable claim.
+    if len(t) < 120:
+        return True, f"extracted text too short ({len(t)} chars)"
+
+    # 2. Dominated by a shell/interface phrase and still short-ish.
+    shell_hits = [p for p in _SHELL_PHRASES if p in low]
+    if shell_hits and len(t) < 400:
+        return True, f"shell snippet only (matched: {shell_hits[0]})"
+
+    # 3. The text is basically just the author handle repeated (e.g. og:title
+    #    = "ABC News on Instagram" with no caption body).
+    if author:
+        stripped = low.replace(author.lower(), "").strip(" :·-|\n\t")
+        if len(stripped) < 60:
+            return True, "text is essentially just the author handle"
+
+    # 4. No sentence-like content at all (no full stops / Bengali dari) and short.
+    sentence_breaks = low.count(". ") + low.count("। ") + low.count(".\n") + low.count("।\n")
+    if sentence_breaks == 0 and len(t) < 300:
+        return True, "no sentence-like narrative content"
+
+    return False, ""
+
+
 def is_login_walled_social_url(url: str) -> bool:
+
     """Social platforms that hide post content behind a login wall.
 
     For these, a failed scrape must NOT be handed to the LLM with a
@@ -545,15 +597,22 @@ async def scrape_instagram_url(url: str) -> dict:
         "failure_reason_bn": "",
     }
 
-    # Step 1: Jina Reader
+    # Step 1: Jina Reader — but reject thin/shell scrapes. Jina often returns
+    # only the IG og:title ("ABC News on Instagram: ...") which passes its own
+    # >20-char success check yet contains NO verifiable post content. Feeding
+    # that to the LLM produces a fabricated score, so we quality-gate it here.
     jina = await _scrape_via_jina(url)
     if jina["success"] and jina["text"]:
-        result["text"] = jina["text"]
-        result["title"] = jina["title"]
-        result["author"] = jina["author"]
-        result["image_url"] = jina["image_url"]
-        result["success"] = True
-        return result
+        low_quality, why = _is_low_quality_social_text(jina["text"], jina.get("author", ""))
+        if not low_quality:
+            result["text"] = jina["text"]
+            result["title"] = jina["title"]
+            result["author"] = jina["author"]
+            result["image_url"] = jina["image_url"]
+            result["success"] = True
+            return result
+        logger.warning(f"[Scraper] IG Jina scrape rejected as low-quality: {why}")
+
 
     # Step 2: Direct OG tags (public posts expose them)
     try:
