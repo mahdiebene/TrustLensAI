@@ -40,17 +40,23 @@ def main():
     )
 
     # Combined chained command — `cd` doesn't persist across exec_command sessions
+    # IMPORTANT: use fetch + hard reset, NOT `git pull`. The VPS clone ends up
+    # with divergent history whenever master is force-pushed, and a plain pull
+    # dies with "Need to specify how to reconcile divergent branches" — shipping
+    # nothing. The hard reset always lands exactly on origin/master.
     deploy_cmd = (
         "cd /opt/trustlens && "
-        "git pull origin master && "
+        "git fetch origin master && git reset --hard origin/master && "
+        "git log -1 --oneline && "
         "docker compose build backend && "
         "docker compose up -d backend && "
         "sleep 8 && "
         "docker exec trustlens-redis-1 sh -c "
         "'redis-cli KEYS \"trustlens:analysis:*\" | xargs -r redis-cli DEL' && "
         "echo '--- BACKEND LOGS ---' && "
-        "docker logs --tail=20 trustlens-backend-1"
+        "docker logs --tail=30 trustlens-backend-1"
     )
+
     run(client, deploy_cmd, timeout=600)
 
     client.close()
