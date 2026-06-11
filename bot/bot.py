@@ -506,6 +506,13 @@ async def handle_update(client: httpx.AsyncClient, update: dict[str, Any]) -> No
     reply_text = _extract_text(reply_msg)
     reply_has_photo = bool(reply_msg.get("photo"))
 
+    # Diagnostic: log exactly what we receive so routing bugs are visible.
+    logger.info(
+        "UPDATE chat=%s text=%r has_reply=%s reply_text=%r has_photo=%s",
+        chat_id, text, bool(reply_msg), reply_text, bool(message.get("photo")),
+    )
+
+
     # Does this message contain a recognized command token anywhere?
     # (Users frequently put "/analyze@Bot" on its own line, or after the text.)
     tokens = text.split()
